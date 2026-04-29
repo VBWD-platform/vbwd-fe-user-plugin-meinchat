@@ -1,0 +1,11 @@
+{
+  "tabs": [
+    {
+      "id": "display",
+      "label": "Display",
+      "fields": [
+        { "key": "showTokenButton", "label": "Show 'Send tokens' button", "component": "checkbox" }
+      ]
+    }
+  ]
+}

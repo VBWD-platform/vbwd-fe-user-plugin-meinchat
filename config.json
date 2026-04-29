@@ -1,0 +1,7 @@
+{
+  "showTokenButton": {
+    "type": "boolean",
+    "default": true,
+    "description": "Show the 'Send tokens' button in the conversation header"
+  }
+}

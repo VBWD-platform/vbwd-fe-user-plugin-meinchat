@@ -1,0 +1,60 @@
+{
+  "meinchat": {
+    "cancel": "Cancel",
+    "tabs": {
+      "inbox": "Inbox",
+      "contacts": "Contacts"
+    },
+    "inbox": {
+      "empty": "No conversations yet."
+    },
+    "find": {
+      "title": "Find someone",
+      "placeholder": "Type a nickname (e.g. alice)…",
+      "button": "Find user",
+      "startChat": "Chat",
+      "saveContact": "Save",
+      "noResults": "No matches."
+    },
+    "contacts": {
+      "add": "Add contact",
+      "save": "Save",
+      "remove": "Remove",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "pinOnAdd": "Pin to top",
+      "nickname": "Nickname",
+      "alias": "Alias",
+      "note": "Note",
+      "pinned": "Pinned",
+      "all": "All",
+      "empty": "No contacts yet — find someone via the inbox to start."
+    },
+    "conversation": {
+      "empty": "No messages yet."
+    },
+    "composer": {
+      "placeholder": "Type a message…"
+    },
+    "header": {
+      "sendTokens": "Send tokens"
+    },
+    "transfer": {
+      "title": "Send tokens",
+      "to": "To",
+      "amount": "Amount",
+      "note": "Note (optional)",
+      "send": "Send"
+    },
+    "nickname": {
+      "title": "Your nickname",
+      "hint": "This is how other users find you. Lowercase letters, digits, _ and - only.",
+      "label": "Nickname",
+      "save": "Save"
+    },
+    "nav": {
+      "messages": "Messages"
+    },
+    "unreadTotal": "Unread total"
+  }
+}
