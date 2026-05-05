@@ -1,4 +1,9 @@
 {
+  "debug_mode": {
+    "type": "boolean",
+    "default": false,
+    "description": "Enable verbose debug logging in the meinchat user UI (live mode when off)"
+  },
   "showTokenButton": {
     "type": "boolean",
     "default": true,

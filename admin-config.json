@@ -1,6 +1,18 @@
 {
   "tabs": [
     {
+      "id": "general",
+      "label": "General",
+      "fields": [
+        {
+          "key": "debug_mode",
+          "label": "Debug mode",
+          "component": "checkbox",
+          "description": "Enable verbose debug logging in the user UI. Disable in production (live mode)."
+        }
+      ]
+    },
+    {
       "id": "display",
       "label": "Display",
       "fields": [
