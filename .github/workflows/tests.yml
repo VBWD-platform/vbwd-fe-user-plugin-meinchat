@@ -60,7 +60,8 @@ jobs:
           cd vbwd-fe-user
           npm run lint
 
-      - name: Project-wide vue-tsc
-        run: |
-          cd vbwd-fe-user
-          npx vue-tsc --noEmit
+      # Note: project-wide `vue-tsc --noEmit` is intentionally NOT run here.
+      # meinchat is agnostic — it does not import cross-plugin code, so a
+      # plugin-scoped typecheck would always pass and add no signal. The
+      # project-wide vue-tsc that exercises cross-plugin imports lives in
+      # vbwd-fe-user's own CI, where the full plugin graph is installed.
