@@ -45,13 +45,14 @@ jobs:
           cd vbwd-fe-user
           npm install
 
-      - name: Run plugin tests
+      - name: Run plugin tests (Vitest unit/integration; Playwright e2e excluded)
         run: |
           cd vbwd-fe-user
-          if find plugins/meinchat -name "*.spec.ts" -o -name "*.test.ts" | grep -q .; then
-            npx vitest run plugins/meinchat --reporter=verbose
+          unit_test_files=$(find plugins/meinchat \( -name "*.spec.ts" -o -name "*.test.ts" \) -not -path "*/tests/e2e/*" 2>/dev/null)
+          if [ -n "$unit_test_files" ]; then
+            npx vitest run plugins/meinchat/tests/ --exclude='**/tests/e2e/**' --reporter=verbose
           else
-            echo "No tests found for meinchat — skipping."
+            echo "No Vitest unit/integration tests found for meinchat — skipping (any e2e specs run by Playwright separately)."
           fi
 
       - name: Project-wide ESLint
