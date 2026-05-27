@@ -90,6 +90,81 @@ describe('useMeinchatStore', () => {
     expect(store.messages('cv1')).toHaveLength(0);
   });
 
+  it('sendText: SSE echo BEFORE POST resolves — exactly one server row in buf', async () => {
+    // Regression: the sender used to see their message twice because the
+    // SSE stream broadcasts the saved row back, then the POST response
+    // tried to replace the optimistic placeholder — producing two server
+    // rows when the SSE had already added one.
+    (api.listMessages as any).mockResolvedValue({ items: [] });
+
+    let resolveSend: (row: any) => void = () => undefined;
+    (api.sendTextMessage as any).mockReturnValue(
+      new Promise((res) => {
+        resolveSend = res;
+      }),
+    );
+
+    const store = useMeinchatStore();
+    await store.fetchMessages('cv1');
+
+    const pending = store.sendText('cv1', 'hi');
+    // POST still in-flight — buf has the optimistic placeholder.
+    expect(store.messages('cv1')).toHaveLength(1);
+
+    // SSE arrives first with the real server row.
+    store.handleStreamEvent({
+      type: 'message',
+      message: msg({ id: 'real-1', body: 'hi' }) as any,
+    } as any);
+
+    // Now the POST resolves with the same server row.
+    resolveSend(msg({ id: 'real-1', body: 'hi' }));
+    await pending;
+
+    const after = store.messages('cv1');
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe('real-1');
+  });
+
+  it('sendText: POST resolves before SSE — SSE dedup keeps exactly one row', async () => {
+    (api.listMessages as any).mockResolvedValue({ items: [] });
+    (api.sendTextMessage as any).mockResolvedValue(msg({ id: 'real-2', body: 'hi' }));
+
+    const store = useMeinchatStore();
+    await store.fetchMessages('cv1');
+    await store.sendText('cv1', 'hi');
+
+    // SSE arrives AFTER the POST — the server row is already in buf.
+    store.handleStreamEvent({
+      type: 'message',
+      message: msg({ id: 'real-2', body: 'hi' }) as any,
+    } as any);
+
+    const after = store.messages('cv1');
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe('real-2');
+  });
+
+  it('sendAttachment dedups when SSE has already inserted the same row', async () => {
+    (api.listMessages as any).mockResolvedValue({ items: [] });
+    const serverRow = msg({ id: 'real-3', body: 'pic', attachment_url: '/x.jpg' });
+    (api.sendAttachmentMessage as any).mockResolvedValue(serverRow);
+
+    const store = useMeinchatStore();
+    await store.fetchMessages('cv1');
+
+    // Simulate SSE arriving first (no optimistic was inserted for attachments).
+    store.handleStreamEvent({
+      type: 'message',
+      message: serverRow as any,
+    } as any);
+    expect(store.messages('cv1')).toHaveLength(1);
+
+    // sendAttachment resolves with the same row — must not duplicate.
+    await store.sendAttachment('cv1', new File(['x'], 'x.jpg'));
+    expect(store.messages('cv1')).toHaveLength(1);
+  });
+
   it('handleStreamEvent[type=message] inserts new message into the cache', () => {
     const store = useMeinchatStore();
     store.handleStreamEvent({
