@@ -105,11 +105,18 @@ export const useMeinchatStore = defineStore('meinchat', {
 
       try {
         const row = await sendTextMessage(conversationId, body);
+        // The SSE stream broadcasts the message back to the sender too, and
+        // may arrive either BEFORE or AFTER this POST resolves. Without
+        // dedup, replacing the optimistic placeholder with the server row
+        // can produce a second copy when the SSE has already inserted one.
+        // So: drop the optimistic, then append the server row ONLY if it
+        // isn't already present (dedup by real id).
         const buf = this.messagesByConv[conversationId] ?? [];
-        const idx = buf.findIndex((m) => m.id === optimisticId);
-        if (idx >= 0) buf[idx] = row;
-        else buf.push(row);
-        this.messagesByConv[conversationId] = [...buf];
+        const withoutOptimistic = buf.filter((m) => m.id !== optimisticId);
+        const alreadyPresent = withoutOptimistic.some((m) => m.id === row.id);
+        this.messagesByConv[conversationId] = alreadyPresent
+          ? withoutOptimistic
+          : [...withoutOptimistic, row];
         return row;
       } catch (err) {
         const buf = this.messagesByConv[conversationId] ?? [];
@@ -122,8 +129,11 @@ export const useMeinchatStore = defineStore('meinchat', {
 
     async sendAttachment(conversationId: string, file: File, body = '') {
       const row = await sendAttachmentMessage(conversationId, file, body);
-      const list = this.messagesByConv[conversationId] ?? [];
-      this.messagesByConv[conversationId] = [...list, row];
+      // Same SSE-race dedup as sendText — the stream echoes back the same
+      // row (with the real id) and would otherwise produce a second copy.
+      const buf = this.messagesByConv[conversationId] ?? [];
+      const alreadyPresent = buf.some((m) => m.id === row.id);
+      this.messagesByConv[conversationId] = alreadyPresent ? buf : [...buf, row];
       return row;
     },
 
