@@ -55,13 +55,14 @@ export const meinchatPlugin: IPlugin = {
     sdk.addTranslations('th', th);
     sdk.addTranslations('zh', zh);
 
-    // Inject a compact nickname picker into the user Profile page.
-    // Mirrors the iOS ``ProfileNicknameSection``; the dedicated full
-    // ``NicknameSettingsView`` (route above) remains for advanced usage.
+    // Inject a compact nickname picker ABOVE the core Profile cards —
+    // the user picks a handle first, then sees the rest of Profile.
+    // Mirrors the iOS ``ProfileNicknameSection`` placement.
     registerProfileSection({
       id: 'meinchat-nickname',
       component: ProfileNicknameSection,
-      order: 30,
+      placement: 'top',
+      order: 10,
     });
   },
 

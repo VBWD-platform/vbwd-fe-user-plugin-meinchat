@@ -5,13 +5,6 @@
   >
     <header class="profile-nickname__header">
       <h2>{{ $t('meinchat.nickname.title') }}</h2>
-      <router-link
-        :to="{ name: 'meinchat-nickname-settings' }"
-        class="profile-nickname__more"
-        data-testid="profile-nickname-more"
-      >
-        {{ $t('meinchat.nickname.advanced') }} →
-      </router-link>
     </header>
     <p class="profile-nickname__hint">
       {{ $t('meinchat.nickname.hint') }}
@@ -115,23 +108,8 @@ async function onSubmit() {
 </script>
 
 <style scoped>
-.profile-nickname__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
 .profile-nickname__header h2 {
   margin: 0;
-}
-.profile-nickname__more {
-  font-size: 0.9rem;
-  color: var(--vbwd-color-primary, #2563eb);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.profile-nickname__more:hover {
-  text-decoration: underline;
 }
 .profile-nickname__hint {
   color: #666;

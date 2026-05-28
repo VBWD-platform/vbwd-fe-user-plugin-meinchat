@@ -51,7 +51,6 @@
       "hint": "This is how other users find you. Lowercase letters, digits, _ and - only.",
       "label": "Nickname",
       "save": "Save",
-      "advanced": "高级",
       "savedToast": "昵称已保存。",
       "saveFailed": "保存昵称失败。"
     },
