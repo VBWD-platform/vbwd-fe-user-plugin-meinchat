@@ -1,5 +1,7 @@
 import type { IPlugin, IPlatformSDK } from 'vbwd-view-component';
 import { userNavRegistry } from '@/plugins/userNavRegistry';
+import { registerProfileSection } from '@/registries/profileSectionsRegistry';
+import ProfileNicknameSection from './src/components/ProfileNicknameSection.vue';
 import en from './locales/en.json';
 import de from './locales/de.json';
 import es from './locales/es.json';
@@ -52,6 +54,15 @@ export const meinchatPlugin: IPlugin = {
     sdk.addTranslations('ru', ru);
     sdk.addTranslations('th', th);
     sdk.addTranslations('zh', zh);
+
+    // Inject a compact nickname picker into the user Profile page.
+    // Mirrors the iOS ``ProfileNicknameSection``; the dedicated full
+    // ``NicknameSettingsView`` (route above) remains for advanced usage.
+    registerProfileSection({
+      id: 'meinchat-nickname',
+      component: ProfileNicknameSection,
+      order: 30,
+    });
   },
 
   activate() {

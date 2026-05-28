@@ -50,7 +50,10 @@
       "title": "Your nickname",
       "hint": "This is how other users find you. Lowercase letters, digits, _ and - only.",
       "label": "Nickname",
-      "save": "Save"
+      "save": "Save",
+      "advanced": "詳細",
+      "savedToast": "ニックネームを保存しました。",
+      "saveFailed": "ニックネームの保存に失敗しました。"
     },
     "nav": {
       "messages": "Messages"

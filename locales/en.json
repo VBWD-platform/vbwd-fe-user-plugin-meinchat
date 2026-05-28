@@ -50,7 +50,10 @@
       "title": "Your nickname",
       "hint": "This is how other users find you. Lowercase letters, digits, _ and - only.",
       "label": "Nickname",
-      "save": "Save"
+      "save": "Save",
+      "advanced": "Advanced",
+      "savedToast": "Nickname saved.",
+      "saveFailed": "Failed to save nickname."
     },
     "nav": {
       "messages": "Messages"
