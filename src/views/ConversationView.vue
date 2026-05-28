@@ -73,9 +73,15 @@ const messages = computed(() =>
 );
 
 const currentUserId = computed(() => {
-  // Stored at login; consumed here without leaking the auth-store dep
-  // back into this plugin's surface.
-  return localStorage.getItem('auth_user_id') ?? '';
+  // Stored at login (Login.vue / EmailBlock.vue both call
+  // ``localStorage.setItem('user_id', response.user_id)``); consumed
+  // here without leaking the auth-store dep back into this plugin's
+  // surface.
+  //
+  // Was previously reading ``auth_user_id`` (a key that's never set) →
+  // every bubble fell into the ``mine === false`` branch and every
+  // message rendered on the left. Use the canonical ``user_id`` key.
+  return localStorage.getItem('user_id') ?? '';
 });
 
 onMounted(async () => {
