@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { markRaw } from 'vue';
 import {
   type ConversationRow,
   type MessageRow,
@@ -10,11 +11,29 @@ import {
   sendTextMessage,
   startOrGetConversation,
 } from '../api';
+import type { LocalMessageCache } from '../composables/useLocalMessageCache';
+import { useMessagingLimits } from '../composables/useMessagingLimits';
+import {
+  MILLIS_PER_DAY,
+  resolveRetentionDays,
+} from '../composables/clientRetention';
+
+/** How often the best-effort eviction sweep runs (S28.2 §2.2). */
+const EVICTION_INTERVAL_MS = 30 * 60 * 1000;
+
+interface BootDeps {
+  cache: LocalMessageCache;
+  /** Server-suggested retention in days; the sweep clamps the user setting to it. */
+  serverSuggestedRetentionDays?: number;
+}
 
 interface State {
   conversations: ConversationRow[];
   messagesByConv: Record<string, MessageRow[]>;
   loadingConversations: boolean;
+  // markRaw'd — the cache/timer are collaborators, not reactive data.
+  cache: LocalMessageCache | null;
+  evictionTimer: ReturnType<typeof setInterval> | null;
 }
 
 interface StreamEvent {
@@ -30,6 +49,8 @@ export const useMeinchatStore = defineStore('meinchat', {
     conversations: [],
     messagesByConv: {},
     loadingConversations: false,
+    cache: null,
+    evictionTimer: null,
   }),
 
   getters: {
@@ -49,6 +70,53 @@ export const useMeinchatStore = defineStore('meinchat', {
   },
 
   actions: {
+    /**
+     * One-time wiring of the injected local cache + the best-effort
+     * eviction sweep (S28.2 §2.2/§2.3). DI seam: the cache (and its KEK)
+     * are passed in, never module-global, so S28.3b can swap the KEK
+     * producer without touching the store.
+     *
+     * Eviction runs as a plain ``setInterval`` rather than a Web Worker:
+     * the sweep reads only the unencrypted ``cached_at`` index and deletes
+     * by key range — a trivial, non-blocking job that does not justify a
+     * separate worker file or its build/bundle overhead.
+     */
+    boot(deps: BootDeps) {
+      this.cache = markRaw(deps.cache);
+      if (this.evictionTimer) return;
+      const runSweep = () => {
+        void this.evictExpiredCache(deps.serverSuggestedRetentionDays);
+      };
+      runSweep();
+      this.evictionTimer = setInterval(runSweep, EVICTION_INTERVAL_MS);
+    },
+
+    /** Stops the eviction sweep + drops the cache (e.g. on logout). */
+    shutdown() {
+      if (this.evictionTimer) {
+        clearInterval(this.evictionTimer);
+        this.evictionTimer = null;
+      }
+      this.cache = null;
+    },
+
+    /**
+     * Best-effort cache sweep: ages out rows older than
+     * ``min(user_setting, server_suggested)`` days. The retention window is
+     * resolved through the single shared helper (DRY, S28.2 §6).
+     */
+    async evictExpiredCache(serverSuggestedRetentionDays?: number) {
+      if (!this.cache) return 0;
+      const serverSuggested =
+        serverSuggestedRetentionDays ??
+        useMessagingLimits().data.value?.messages_retention_days_client_suggested ??
+        0;
+      if (serverSuggested <= 0) return 0;
+      const retentionDays = resolveRetentionDays(serverSuggested);
+      const threshold = Date.now() - retentionDays * MILLIS_PER_DAY;
+      return this.cache.evictOlderThan(threshold);
+    },
+
     async fetchConversations() {
       this.loadingConversations = true;
       try {
@@ -60,11 +128,36 @@ export const useMeinchatStore = defineStore('meinchat', {
     },
 
     async openConversation(peerNickname: string): Promise<ConversationRow> {
+      // (a) Resolve the conversation id.
       const conv = await startOrGetConversation(peerNickname);
       // Insert at the top if it's new; replace otherwise (server is canon).
       const idx = this.conversations.findIndex((c) => c.id === conv.id);
       if (idx >= 0) this.conversations[idx] = conv;
       else this.conversations = [conv, ...this.conversations];
+
+      // (b) Cache-first paint — show local history immediately, without
+      // waiting on the server round-trip. No-op when no cache is injected.
+      if (this.cache) {
+        const cached = await this.cache.listByConversation(conv.id);
+        if (cached.length > 0) this.messagesByConv[conv.id] = cached;
+      }
+
+      // (c) Fetch the server's most-recent window and merge by id, reusing
+      // the same dedup-by-id invariant the SSE/POST paths rely on.
+      const result = await listMessages(conv.id);
+      const serverRows = [...result.items].reverse(); // server returns newest-first
+      const existing = this.messagesByConv[conv.id] ?? [];
+      const byId = new Map(existing.map((m) => [m.id, m]));
+      for (const row of serverRows) byId.set(row.id, row);
+      this.messagesByConv[conv.id] = [...byId.values()].sort(
+        (left, right) =>
+          (left.sent_at ? Date.parse(left.sent_at) : 0) -
+          (right.sent_at ? Date.parse(right.sent_at) : 0),
+      );
+
+      // (d) Refresh the cache with the latest server state.
+      if (this.cache) await this.cache.putMany(serverRows);
+
       return conv;
     },
 

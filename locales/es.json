@@ -54,6 +54,11 @@
       "savedToast": "Apodo guardado.",
       "saveFailed": "No se pudo guardar el apodo."
     },
+    "retention": {
+      "title": "Retención de chats",
+      "body": "Guardamos tus chats en este dispositivo durante {deviceDays} días y en el servidor durante {serverDays} días.",
+      "keep_label": "Conservar en este dispositivo durante [N] días (máx. {max})"
+    },
     "nav": {
       "messages": "Messages"
     },

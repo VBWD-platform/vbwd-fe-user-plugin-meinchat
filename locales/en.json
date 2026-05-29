@@ -54,6 +54,11 @@
       "savedToast": "Nickname saved.",
       "saveFailed": "Failed to save nickname."
     },
+    "retention": {
+      "title": "Chat retention",
+      "body": "We keep your chats on this device for {deviceDays} days and on the server for {serverDays} days.",
+      "keep_label": "Keep on this device for [N] days (max {max})"
+    },
     "nav": {
       "messages": "Messages"
     },

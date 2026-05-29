@@ -88,6 +88,13 @@ export interface StreamTokenResponse {
   ttl_seconds: number;
 }
 
+export interface MessagingLimits {
+  messages_retention_days_server: number;
+  messages_retention_days_client_suggested: number;
+  attachments_retention_days_server: number;
+  ciphertext_max_bytes: number;
+}
+
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
@@ -269,6 +276,11 @@ export async function mintStreamToken(): Promise<StreamTokenResponse> {
     headers: authHeaders(),
   });
   return jsonOrThrow<StreamTokenResponse>(res);
+}
+
+export async function getMessagingLimits(): Promise<MessagingLimits> {
+  const res = await fetch('/api/v1/messaging/limits', { headers: authHeaders() });
+  return jsonOrThrow<MessagingLimits>(res);
 }
 
 // ── token transfer ──────────────────────────────────────────────────────────

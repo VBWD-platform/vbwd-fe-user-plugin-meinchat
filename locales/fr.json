@@ -54,6 +54,11 @@
       "savedToast": "Pseudo enregistré.",
       "saveFailed": "Échec de l'enregistrement du pseudo."
     },
+    "retention": {
+      "title": "Conservation des discussions",
+      "body": "Nous conservons vos discussions sur cet appareil pendant {deviceDays} jours et sur le serveur pendant {serverDays} jours.",
+      "keep_label": "Conserver sur cet appareil pendant [N] jours (max {max})"
+    },
     "nav": {
       "messages": "Messages"
     },

@@ -54,6 +54,11 @@
       "savedToast": "Nickname gespeichert.",
       "saveFailed": "Nickname konnte nicht gespeichert werden."
     },
+    "retention": {
+      "title": "Chat-Aufbewahrung",
+      "body": "Wir bewahren deine Chats auf diesem Gerät {deviceDays} Tage und auf dem Server {serverDays} Tage auf.",
+      "keep_label": "Auf diesem Gerät [N] Tage behalten (max. {max})"
+    },
     "nav": {
       "messages": "Messages"
     },

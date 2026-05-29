@@ -2,6 +2,10 @@ import type { IPlugin, IPlatformSDK } from 'vbwd-view-component';
 import { userNavRegistry } from '@/plugins/userNavRegistry';
 import { registerProfileSection } from '@/registries/profileSectionsRegistry';
 import ProfileNicknameSection from './src/components/ProfileNicknameSection.vue';
+import MeinchatRetentionSection from './src/components/MeinchatRetentionSection.vue';
+import { useMeinchatStore } from './src/stores/useMeinchatStore';
+import { useLocalMessageCache } from './src/composables/useLocalMessageCache';
+import { loadKek } from './src/composables/loadKek';
 import en from './locales/en.json';
 import de from './locales/de.json';
 import es from './locales/es.json';
@@ -64,6 +68,16 @@ export const meinchatPlugin: IPlugin = {
       placement: 'top',
       order: 10,
     });
+
+    // Retention info card — sits below the core Profile cards, telling
+    // the user how long their chats are kept (device + server). Numbers
+    // come live from /messaging/limits.
+    registerProfileSection({
+      id: 'meinchat-retention',
+      component: MeinchatRetentionSection,
+      placement: 'bottom',
+      order: 50,
+    });
   },
 
   activate() {
@@ -74,6 +88,20 @@ export const meinchatPlugin: IPlugin = {
       labelKey: 'meinchat.nav.messages',
       testId: 'nav-messages',
     });
+
+    // Wire the encrypted-at-rest local message cache + its eviction sweep
+    // (S28.2). Best-effort: WebCrypto/IndexedDB may be unavailable (old
+    // browsers, SSR, locked-down contexts) — a failure here must not break
+    // messaging, which always falls back to the server window.
+    void (async () => {
+      try {
+        const kek = await loadKek();
+        const cache = useLocalMessageCache(kek);
+        useMeinchatStore().boot({ cache });
+      } catch {
+        // Cache stays disabled; openConversation runs server-only.
+      }
+    })();
   },
 
   deactivate() {

@@ -54,6 +54,11 @@
       "savedToast": "ニックネームを保存しました。",
       "saveFailed": "ニックネームの保存に失敗しました。"
     },
+    "retention": {
+      "title": "チャットの保持",
+      "body": "チャットはこの端末で{deviceDays}日間、サーバーで{serverDays}日間保持されます。",
+      "keep_label": "このデバイスに[N]日間保存（最大{max}日）"
+    },
     "nav": {
       "messages": "Messages"
     },

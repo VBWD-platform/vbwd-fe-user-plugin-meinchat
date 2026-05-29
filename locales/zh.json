@@ -54,6 +54,11 @@
       "savedToast": "昵称已保存。",
       "saveFailed": "保存昵称失败。"
     },
+    "retention": {
+      "title": "聊天保留",
+      "body": "我们会在此设备上保留您的聊天记录 {deviceDays} 天，在服务器上保留 {serverDays} 天。",
+      "keep_label": "在此设备上保留[N]天（最多{max}天）"
+    },
     "nav": {
       "messages": "Messages"
     },

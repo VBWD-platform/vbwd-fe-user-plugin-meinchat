@@ -85,9 +85,12 @@ const currentUserId = computed(() => {
 });
 
 onMounted(async () => {
+  // openConversation now owns the message load: cache-first paint, then a
+  // server-window fetch merged by id (S28.2 §2.3). No separate
+  // fetchMessages call here — that would replace the merged view with a
+  // server-only window and drop the cached rows.
   const conv = await store.openConversation(props.nickname);
   conversationId.value = conv.id;
-  await store.fetchMessages(conv.id);
   await store.markRead(conv.id);
 
   unregisterListener = stream.onEvent((event) => {
