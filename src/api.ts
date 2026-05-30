@@ -50,6 +50,24 @@ export interface ConversationRow {
   last_message_at: string | null;
   last_message_preview: string | null;
   unread_count: number;
+  // S28.3b — pinned protocol ('plain' | 'e2e_v1'); routes e2e sends/reads
+  // through the meinchat-plus crypto provider when one is registered.
+  protocol?: string;
+}
+
+// S28.4 — one stored blob (fullres/thumb). For `plain` attachments
+// `storage_url` is a directly-renderable image URL; for `e2e_v1` it is opaque
+// ciphertext (the meinchat-plus client fetches + decrypts via `id`).
+export interface MessageAttachment {
+  id: string;
+  kind: 'fullres' | 'thumb';
+  storage_url: string;
+  protocol: string;
+  mime: string;
+  bytes_count: number;
+  width_px: number | null;
+  height_px: number | null;
+  envelope_header?: Record<string, unknown>;
 }
 
 export interface MessageRow {
@@ -58,13 +76,17 @@ export interface MessageRow {
   sender_id: string;
   sender_nickname: string;
   body: string;
-  attachment_url: string | null;
-  attachment_thumb_url: string | null;
-  attachment_width_px: number | null;
-  attachment_height_px: number | null;
+  attachments: MessageAttachment[];
   sent_at: string | null;
   read_at: string | null;
   system_kind: string | null;
+  // S28.3b — pinned protocol + opaque ciphertext for e2e_v1 rows. The
+  // meinchat-plus provider decrypts `envelope` into a display `body`.
+  protocol?: string;
+  envelope?: string;
+  // S28.4 — local attachment-id → `blob:` URL map set by the e2e provider on
+  // hydration (decrypted image previews). Absent for plain rows.
+  attachmentUrls?: Record<string, string>;
 }
 
 export interface TokenTransferResult {

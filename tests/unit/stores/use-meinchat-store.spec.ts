@@ -30,10 +30,7 @@ const msg = (over: Partial<any> = {}) => ({
   sender_id: over.sender_id ?? 'me',
   sender_nickname: over.sender_nickname ?? 'me',
   body: over.body ?? 'hi',
-  attachment_url: null,
-  attachment_thumb_url: null,
-  attachment_width_px: null,
-  attachment_height_px: null,
+  attachments: [],
   sent_at: over.sent_at ?? '2026-04-29T00:00:00Z',
   read_at: null,
   system_kind: over.system_kind ?? null,
@@ -147,7 +144,7 @@ describe('useMeinchatStore', () => {
 
   it('sendAttachment dedups when SSE has already inserted the same row', async () => {
     (api.listMessages as any).mockResolvedValue({ items: [] });
-    const serverRow = msg({ id: 'real-3', body: 'pic', attachment_url: '/x.jpg' });
+    const serverRow = msg({ id: 'real-3', body: 'pic' });
     (api.sendAttachmentMessage as any).mockResolvedValue(serverRow);
 
     const store = useMeinchatStore();

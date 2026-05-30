@@ -17,11 +17,11 @@
     data-testid="message-bubble"
   >
     <div
-      v-if="message.attachment_url"
+      v-if="plainImageUrl"
       class="bubble__image"
     >
       <img
-        :src="message.attachment_url"
+        :src="plainImageUrl"
         :alt="`Image from @${message.sender_nickname}`"
       >
     </div>
@@ -49,6 +49,18 @@ const props = defineProps<{
   message: MessageRow;
   mine: boolean;
 }>();
+
+// Renderable fullres image URL. PLAIN → the storage URL directly; e2e_v1 →
+// the decrypted `blob:` URL the meinchat-plus provider put in `attachmentUrls`
+// during hydration (null until decrypted / if this device can't).
+const plainImageUrl = computed(() => {
+  const fullres = (props.message.attachments ?? []).find((a) => a.kind === 'fullres');
+  if (!fullres) return null;
+  if (fullres.protocol === 'e2e_v1') {
+    return props.message.attachmentUrls?.[fullres.id] ?? null;
+  }
+  return fullres.protocol === 'plain' ? fullres.storage_url : null;
+});
 
 const formattedTime = computed(() => {
   if (!props.message.sent_at) return '';

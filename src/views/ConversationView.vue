@@ -34,8 +34,23 @@
       {{ error }}
     </p>
 
+    <!-- S28.3b — plugin overlay (e.g. meinchat-plus secure-chat pairing gate). -->
+    <component
+      :is="overlayComponent"
+      v-if="overlayComponent && conversation"
+      :conversation="conversation"
+    />
+
+    <p
+      v-if="composerHint"
+      class="meinchat-secure-hint"
+      data-testid="composer-hint"
+    >
+      {{ composerHint }}
+    </p>
+
     <MessageComposer
-      :disabled="sending"
+      :disabled="sending || composerBlocked"
       @send="onSend"
     />
 
@@ -56,14 +71,26 @@ import MessageComposer from '../components/MessageComposer.vue';
 import TokenTransferDialog from '../components/TokenTransferDialog.vue';
 import { useMeinchatStore } from '../stores/useMeinchatStore';
 import { useMessagingStream } from '../composables/useMessagingStream';
+import type { ConversationRow } from '../api';
+import {
+  getComposerPrecheck,
+  getConversationOverlay,
+} from '../ui/conversationExtensions';
 
 const props = defineProps<{ nickname: string }>();
 const store = useMeinchatStore();
 
 const conversationId = ref<string | null>(null);
+const conversation = ref<ConversationRow | null>(null);
 const sending = ref(false);
 const transferOpen = ref(false);
 const error = ref('');
+
+// S28.3b — optional plugin overlay (e.g. meinchat-plus secure-chat gate) +
+// composer precheck. Both null when no plugin registered (meinchat-alone).
+const overlayComponent = getConversationOverlay();
+const composerBlocked = ref(false);
+const composerHint = ref('');
 const messagesArea = ref<HTMLElement | null>(null);
 const stream = useMessagingStream();
 let unregisterListener: (() => void) | null = null;
@@ -91,7 +118,21 @@ onMounted(async () => {
   // server-only window and drop the cached rows.
   const conv = await store.openConversation(props.nickname);
   conversationId.value = conv.id;
+  conversation.value = conv;
   await store.markRead(conv.id);
+
+  // Plugin composer precheck (e.g. peer has no secure-chat device) — disables
+  // Send + surfaces a hint. No-op when no plugin registered.
+  const precheck = getComposerPrecheck();
+  if (precheck) {
+    try {
+      const result = await precheck(conv);
+      composerBlocked.value = !result.canSend;
+      composerHint.value = result.hint ?? '';
+    } catch {
+      /* precheck is best-effort — never block on its failure */
+    }
+  }
 
   unregisterListener = stream.onEvent((event) => {
     store.handleStreamEvent(event as any);

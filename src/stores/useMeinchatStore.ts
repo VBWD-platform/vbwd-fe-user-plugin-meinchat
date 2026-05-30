@@ -12,6 +12,7 @@ import {
   startOrGetConversation,
 } from '../api';
 import type { LocalMessageCache } from '../composables/useLocalMessageCache';
+import { getMessageCrypto } from '../crypto/messageCryptoRegistry';
 import { useMessagingLimits } from '../composables/useMessagingLimits';
 import {
   MILLIS_PER_DAY,
@@ -148,7 +149,9 @@ export const useMeinchatStore = defineStore('meinchat', {
       const serverRows = [...result.items].reverse(); // server returns newest-first
       const existing = this.messagesByConv[conv.id] ?? [];
       const byId = new Map(existing.map((m) => [m.id, m]));
-      for (const row of serverRows) byId.set(row.id, row);
+      for (const row of await this._hydrateE2eRows(serverRows)) {
+        byId.set(row.id, row);
+      }
       this.messagesByConv[conv.id] = [...byId.values()].sort(
         (left, right) =>
           (left.sent_at ? Date.parse(left.sent_at) : 0) -
@@ -165,7 +168,7 @@ export const useMeinchatStore = defineStore('meinchat', {
       const result = await listMessages(conversationId, { before });
       // Server returns newest first; we keep newest-last in the cache so
       // a simple v-for renders the timeline naturally.
-      const ordered = [...result.items].reverse();
+      const ordered = await this._hydrateE2eRows([...result.items].reverse());
       if (before) {
         // Pagination — prepend older messages to what we already have.
         this.messagesByConv[conversationId] = [
@@ -177,6 +180,36 @@ export const useMeinchatStore = defineStore('meinchat', {
       }
     },
 
+    /** S28.3b — decrypt e2e_v1 rows into a display `body` via the registered
+     *  meinchat-plus provider. Plaintext rows, already-decrypted rows, and the
+     *  no-provider case pass through untouched; decryption never throws. */
+    async _hydrateE2eRows(rows: MessageRow[]): Promise<MessageRow[]> {
+      const provider = getMessageCrypto();
+      if (!provider) return rows;
+      return Promise.all(
+        rows.map(async (row) => {
+          // Already hydrated (e.g. our own optimistic sent row) — leave it.
+          if (row.protocol !== 'e2e_v1' || !row.envelope) return row;
+          if (row.body && row.attachmentUrls) return row;
+          // hydrateRow decrypts text + attachments IN ORDER (ratchet-safe);
+          // fall back to text-only decrypt on older providers.
+          if (provider.hydrateRow) {
+            const { body, attachmentUrls } = await provider.hydrateRow(row);
+            return {
+              ...row,
+              body: body ?? row.body,
+              attachmentUrls: { ...row.attachmentUrls, ...attachmentUrls },
+            };
+          }
+          if (!row.body) {
+            const text = await provider.decryptRow(row);
+            if (text != null) return { ...row, body: text };
+          }
+          return row;
+        }),
+      );
+    },
+
     async sendText(conversationId: string, body: string) {
       const optimisticId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const optimistic: MessageRow = {
@@ -185,10 +218,7 @@ export const useMeinchatStore = defineStore('meinchat', {
         sender_id: 'me',
         sender_nickname: '',
         body,
-        attachment_url: null,
-        attachment_thumb_url: null,
-        attachment_width_px: null,
-        attachment_height_px: null,
+        attachments: [],
         sent_at: new Date().toISOString(),
         read_at: null,
         system_kind: null,
@@ -197,7 +227,27 @@ export const useMeinchatStore = defineStore('meinchat', {
       this.messagesByConv[conversationId] = [...list, optimistic];
 
       try {
-        const row = await sendTextMessage(conversationId, body);
+        // S28.3b — e2e_v1 conversations route through the registered
+        // meinchat-plus crypto provider (client-encrypts + posts the
+        // envelope). The optimistic bubble already shows our plaintext; the
+        // returned server row carries the opaque envelope, so we re-attach the
+        // plaintext we just sent for display.
+        const conv = this.conversations.find((c) => c.id === conversationId);
+        const provider = getMessageCrypto();
+        let row: MessageRow;
+        if (conv?.protocol === 'e2e_v1') {
+          if (!provider) {
+            throw new Error('secure chat is not available on this device');
+          }
+          const sent = await provider.sendEncryptedText(
+            conversationId,
+            conv.peer_user_id,
+            body,
+          );
+          row = { ...sent, body };
+        } else {
+          row = await sendTextMessage(conversationId, body);
+        }
         // The SSE stream broadcasts the message back to the sender too, and
         // may arrive either BEFORE or AFTER this POST resolves. Without
         // dedup, replacing the optimistic placeholder with the server row
@@ -221,7 +271,24 @@ export const useMeinchatStore = defineStore('meinchat', {
     },
 
     async sendAttachment(conversationId: string, file: File, body = '') {
-      const row = await sendAttachmentMessage(conversationId, file, body);
+      // S28.4 — e2e conversations encrypt the image client-side via the
+      // provider (fail-closed if none); plain conversations upload as before.
+      const conv = this.conversations.find((c) => c.id === conversationId);
+      const provider = getMessageCrypto();
+      let row: MessageRow;
+      if (conv?.protocol === 'e2e_v1') {
+        if (!provider?.sendEncryptedImage) {
+          throw new Error('secure chat is not available on this device');
+        }
+        row = await provider.sendEncryptedImage(
+          conversationId,
+          conv.peer_user_id,
+          file,
+          body,
+        );
+      } else {
+        row = await sendAttachmentMessage(conversationId, file, body);
+      }
       // Same SSE-race dedup as sendText — the stream echoes back the same
       // row (with the real id) and would otherwise produce a second copy.
       const buf = this.messagesByConv[conversationId] ?? [];
@@ -246,6 +313,27 @@ export const useMeinchatStore = defineStore('meinchat', {
       }
     },
 
+    async _decryptInPlace(convId: string, messageId: string, row: MessageRow) {
+      const provider = getMessageCrypto();
+      if (!provider) return;
+      // Decrypt text + attachments in order (ratchet-safe); text-only fallback.
+      let patch: Partial<MessageRow>;
+      if (provider.hydrateRow) {
+        const { body, attachmentUrls } = await provider.hydrateRow(row);
+        if (body == null && !Object.keys(attachmentUrls).length) return;
+        patch = { body: body ?? row.body, attachmentUrls };
+      } else {
+        const text = await provider.decryptRow(row);
+        if (text == null) return;
+        patch = { body: text };
+      }
+      const buf = this.messagesByConv[convId];
+      if (!buf) return;
+      this.messagesByConv[convId] = buf.map((m) =>
+        m.id === messageId ? { ...m, ...patch } : m,
+      );
+    },
+
     handleStreamEvent(event: StreamEvent) {
       if (event.type === 'message' && event.message) {
         const convId = event.message.conversation_id;
@@ -253,7 +341,12 @@ export const useMeinchatStore = defineStore('meinchat', {
         // Reject duplicate by id (the SSE event arrives just after the
         // POST response writes the same row to the cache).
         if (!buf.some((m) => m.id === event.message!.id)) {
-          this.messagesByConv[convId] = [...buf, event.message];
+          const incoming = event.message;
+          this.messagesByConv[convId] = [...buf, incoming];
+          // e2e rows arrive as opaque ciphertext; decrypt into a display body.
+          if (incoming.protocol === 'e2e_v1' && !incoming.body && incoming.envelope) {
+            void this._decryptInPlace(convId, incoming.id, incoming);
+          }
         }
       } else if (event.type === 'message_deleted' && event.conversation_id && event.message_id) {
         const buf = this.messagesByConv[event.conversation_id];
