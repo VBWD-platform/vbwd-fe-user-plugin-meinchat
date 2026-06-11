@@ -24,6 +24,7 @@
         :key="message.id"
         :message="message"
         :mine="message.sender_id === currentUserId"
+        @select-choice="onSelectChoice"
       />
     </div>
 
@@ -71,7 +72,7 @@ import MessageComposer from '../components/MessageComposer.vue';
 import TokenTransferDialog from '../components/TokenTransferDialog.vue';
 import { useMeinchatStore } from '../stores/useMeinchatStore';
 import { useMessagingStream } from '../composables/useMessagingStream';
-import type { ConversationRow } from '../api';
+import type { BotChoice, ConversationRow } from '../api';
 import {
   getComposerPrecheck,
   getConversationOverlay,
@@ -162,6 +163,21 @@ async function onSend(payload: { body: string; file: File | null }) {
     } else {
       await store.sendText(conversationId.value, payload.body);
     }
+  } catch (err: any) {
+    error.value = err?.error || 'Failed to send';
+  } finally {
+    sending.value = false;
+  }
+}
+
+// S70.1 — tapping a bot-choice card sends the action through the normal send
+// path (no typing required); the bot replies in the same conversation.
+async function onSelectChoice(choice: BotChoice) {
+  if (!conversationId.value || sending.value) return;
+  sending.value = true;
+  error.value = '';
+  try {
+    await store.sendAction(conversationId.value, choice);
   } catch (err: any) {
     error.value = err?.error || 'Failed to send';
   } finally {

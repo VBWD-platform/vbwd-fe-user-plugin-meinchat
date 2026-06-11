@@ -186,6 +186,30 @@ describe('useMeinchatStore', () => {
     expect(store.messages('cv1')).toHaveLength(0);
   });
 
+  it('sendAction sends the label as body + a bot_action meta through the send path', async () => {
+    // S70.1 — tapping a bot-choice card reuses the existing text-send path
+    // (DRY: no parallel transport) with the action_data in `meta`.
+    (api.listMessages as any).mockResolvedValue({ items: [] });
+    (api.sendTextMessage as any).mockResolvedValue(
+      msg({ id: 'act-1', body: 'Pro' }),
+    );
+    const store = useMeinchatStore();
+    await store.fetchMessages('cv1');
+
+    await store.sendAction('cv1', {
+      label: 'Pro',
+      action_data: 'subscription:plan:2',
+      hint: '€29/mo',
+    });
+
+    expect(api.sendTextMessage).toHaveBeenCalledWith('cv1', 'Pro', {
+      kind: 'bot_action',
+      action_data: 'subscription:plan:2',
+    });
+    const after = store.messages('cv1');
+    expect(after[after.length - 1].id).toBe('act-1');
+  });
+
   it('markRead clears unread_count for the conversation', async () => {
     (api.listConversations as any).mockResolvedValue({
       items: [conv({ id: 'cv1', unread_count: 4 })],

@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia';
 import { markRaw } from 'vue';
 import {
+  type BotChoice,
   type ConversationRow,
+  type MessageMeta,
   type MessageRow,
   deleteMessage,
   listConversations,
@@ -210,7 +212,20 @@ export const useMeinchatStore = defineStore('meinchat', {
       );
     },
 
-    async sendText(conversationId: string, body: string) {
+    /**
+     * S70.1 — send a bot-choice tap: the card's label becomes the human-readable
+     * `body` and the opaque `action_data` rides in a `bot_action` meta, reusing
+     * the existing text-send path (DRY — no parallel transport). The bot replies
+     * in the same conversation.
+     */
+    async sendAction(conversationId: string, choice: BotChoice) {
+      return this.sendText(conversationId, choice.label, {
+        kind: 'bot_action',
+        action_data: choice.action_data,
+      });
+    },
+
+    async sendText(conversationId: string, body: string, meta?: MessageMeta) {
       const optimisticId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const optimistic: MessageRow = {
         id: optimisticId,
@@ -222,6 +237,7 @@ export const useMeinchatStore = defineStore('meinchat', {
         sent_at: new Date().toISOString(),
         read_at: null,
         system_kind: null,
+        meta,
       };
       const list = this.messagesByConv[conversationId] ?? [];
       this.messagesByConv[conversationId] = [...list, optimistic];
@@ -246,7 +262,11 @@ export const useMeinchatStore = defineStore('meinchat', {
           );
           row = { ...sent, body };
         } else {
-          row = await sendTextMessage(conversationId, body);
+          // Only forward `meta` when present so a plain text send is an
+          // unchanged 2-arg call (S70.1 regression guarantee).
+          row = meta
+            ? await sendTextMessage(conversationId, body, meta)
+            : await sendTextMessage(conversationId, body);
         }
         // The SSE stream broadcasts the message back to the sender too, and
         // may arrive either BEFORE or AFTER this POST resolves. Without

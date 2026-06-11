@@ -37,18 +37,58 @@
         class="bubble__time"
       >{{ formattedTime }}</span>
     </div>
+    <div
+      v-if="botChoices.length"
+      class="botchat-choices"
+      data-testid="bot-choices"
+    >
+      <button
+        v-for="(choice, index) in botChoices"
+        :key="`${choice.action_data}-${index}`"
+        type="button"
+        class="botchat-card"
+        data-testid="bot-choice-card"
+        @click="emit('select-choice', choice)"
+      >
+        <span
+          class="botchat-card__badge"
+          data-testid="bot-choice-badge"
+        >{{ index + 1 }}</span>
+        <span
+          class="botchat-card__label"
+          data-testid="bot-choice-label"
+        >{{ choice.label }}</span>
+        <span
+          v-if="choice.hint"
+          class="botchat-card__hint"
+          data-testid="bot-choice-hint"
+        >{{ choice.hint }}</span>
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import SafeLinkify from './SafeLinkify.vue';
-import type { MessageRow } from '../api';
+import type { BotChoice, MessageRow } from '../api';
 
 const props = defineProps<{
   message: MessageRow;
   mine: boolean;
 }>();
+
+const emit = defineEmits<{
+  'select-choice': [choice: BotChoice];
+}>();
+
+// S70.1 — clickable choice cards render only on INCOMING bot prompts
+// (`bot_choices`). Outgoing taps / plain messages have no cards.
+const botChoices = computed<BotChoice[]>(() => {
+  if (props.mine) return [];
+  if (props.message.meta?.kind !== 'bot_choices') return [];
+  return props.message.meta.choices ?? [];
+});
 
 // Renderable fullres image URL. PLAIN → the storage URL directly; e2e_v1 →
 // the decrypted `blob:` URL the meinchat-plus provider put in `attachmentUrls`
@@ -129,4 +169,56 @@ const systemTokenTransferText = computed(() => {
   margin-top: 0.2rem;
 }
 .bubble__time { white-space: nowrap; }
+
+/* S70.1 — bot-choice cards. All visuals are themeable via --vbwd-botchat-*
+   custom properties (fed by the portable bot-conversation style in S70.2);
+   the fallbacks here match the storefront walkthrough look out of the box. */
+.botchat-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vbwd-botchat-gap, 6px);
+  margin-top: 8px;
+}
+.botchat-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--vbwd-botchat-card-bg, #fff);
+  border: 1px solid var(--vbwd-botchat-card-border, #e6e9ef);
+  border-radius: var(--vbwd-botchat-card-radius, 12px);
+  color: var(--vbwd-botchat-card-fg, #1d2433);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.botchat-card:hover {
+  border-color: var(--vbwd-botchat-accent, #3b6ef0);
+  box-shadow: 0 1px 4px rgba(59, 110, 240, 0.18);
+}
+.botchat-card__badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--vbwd-botchat-badge-bg, var(--vbwd-botchat-accent, #3b6ef0));
+  color: var(--vbwd-botchat-badge-fg, #fff);
+}
+.botchat-card__label {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+}
+.botchat-card__hint {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--vbwd-botchat-hint, #5b6577);
+}
 </style>

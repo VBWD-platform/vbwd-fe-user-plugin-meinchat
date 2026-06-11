@@ -70,6 +70,25 @@ export interface MessageAttachment {
   envelope_header?: Record<string, unknown>;
 }
 
+// S70.1 — a single bot-choice card: a human label, an opaque + namespaced
+// `action_data` the bridge routes by namespace, and an optional display hint
+// (e.g. a price) shown right-aligned.
+export interface BotChoice {
+  label: string;
+  action_data: string;
+  hint?: string;
+}
+
+// S70.1 — structured/interactive content riding alongside the plain `body`.
+// `bot_choices` (bot → user) carries clickable cards; `bot_action` (user → bot)
+// carries the tapped card's `action_data`. Absent on plain messages → they
+// render exactly as before (Liskov: non-`meta` clients are unaffected).
+export interface MessageMeta {
+  kind: string;
+  choices?: BotChoice[];
+  action_data?: string;
+}
+
 export interface MessageRow {
   id: string;
   conversation_id: string;
@@ -80,6 +99,9 @@ export interface MessageRow {
   sent_at: string | null;
   read_at: string | null;
   system_kind: string | null;
+  // S70.1 — structured/interactive content (bot choices / a tapped action).
+  // Undefined for plain messages.
+  meta?: MessageMeta;
   // S28.3b — pinned protocol + opaque ciphertext for e2e_v1 rows. The
   // meinchat-plus provider decrypts `envelope` into a display `body`.
   protocol?: string;
@@ -240,13 +262,18 @@ export async function listMessages(
 export async function sendTextMessage(
   conversationId: string,
   body: string,
+  meta?: MessageMeta,
 ): Promise<MessageRow> {
+  // `meta` is omitted from the payload unless provided, so a plain text send
+  // is byte-for-byte identical to before (S70.1 regression guarantee).
+  const payload: { body: string; meta?: MessageMeta } = { body };
+  if (meta) payload.meta = meta;
   const res = await fetch(
     `/api/v1/messaging/conversations/${conversationId}/messages`,
     {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ body }),
+      body: JSON.stringify(payload),
     },
   );
   return jsonOrThrow<MessageRow>(res);

@@ -117,3 +117,84 @@ describe('MessageBubble — WhatsApp-style alignment', () => {
     expect(bubble.classes()).not.toContain('bubble--theirs');
   });
 });
+
+describe('MessageBubble — S70.1 bot-choice cards', () => {
+  const choicesMessage = {
+    ...baseMessage,
+    sender_id: 'u-bot',
+    body: 'Choose a plan',
+    meta: {
+      kind: 'bot_choices',
+      choices: [
+        { label: 'Starter', action_data: 'subscription:plan:1', hint: '€9/mo' },
+        { label: 'Pro', action_data: 'subscription:plan:2', hint: '€29/mo' },
+        { label: 'Business', action_data: 'subscription:plan:3' },
+      ],
+    },
+  };
+
+  it('renders one card per choice (badge number + label + optional hint)', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: choicesMessage, mine: false },
+    });
+    const cards = wrapper.findAll('[data-testid="bot-choice-card"]');
+    expect(cards).toHaveLength(3);
+
+    expect(cards[0].find('[data-testid="bot-choice-badge"]').text()).toBe('1');
+    expect(cards[0].find('[data-testid="bot-choice-label"]').text()).toBe('Starter');
+    expect(cards[0].find('[data-testid="bot-choice-hint"]').text()).toBe('€9/mo');
+
+    expect(cards[1].find('[data-testid="bot-choice-badge"]').text()).toBe('2');
+    expect(cards[1].find('[data-testid="bot-choice-label"]').text()).toBe('Pro');
+
+    // Third choice has no hint → the hint node is absent.
+    expect(cards[2].find('[data-testid="bot-choice-badge"]').text()).toBe('3');
+    expect(cards[2].find('[data-testid="bot-choice-hint"]').exists()).toBe(false);
+  });
+
+  it('tapping a card emits ``select-choice`` with the exact card payload', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: choicesMessage, mine: false },
+    });
+    await wrapper.findAll('[data-testid="bot-choice-card"]')[1].trigger('click');
+
+    const emitted = wrapper.emitted('select-choice');
+    expect(emitted).toHaveLength(1);
+    expect(emitted![0][0]).toEqual({
+      label: 'Pro',
+      action_data: 'subscription:plan:2',
+      hint: '€29/mo',
+    });
+  });
+
+  it('does NOT render cards for an outgoing (mine) bot_choices message', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: { ...choicesMessage, sender_id: 'u-me' }, mine: true },
+    });
+    expect(wrapper.findAll('[data-testid="bot-choice-card"]')).toHaveLength(0);
+  });
+
+  it('regression — a message without ``meta`` renders no cards and is unchanged', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: baseMessage, mine: false },
+    });
+    expect(wrapper.findAll('[data-testid="bot-choice-card"]')).toHaveLength(0);
+    expect(wrapper.find('.bubble__body').text()).toBe('hello');
+  });
+
+  it('regression — a bot_action meta (the tapped reply) renders no cards', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          ...baseMessage,
+          sender_id: 'u-me',
+          body: 'Pro',
+          meta: { kind: 'bot_action', action_data: 'subscription:plan:2' },
+        },
+        mine: true,
+      },
+    });
+    expect(wrapper.findAll('[data-testid="bot-choice-card"]')).toHaveLength(0);
+    expect(wrapper.find('.bubble__body').text()).toBe('Pro');
+  });
+});
