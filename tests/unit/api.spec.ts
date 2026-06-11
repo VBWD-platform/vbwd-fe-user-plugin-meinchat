@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { sendTextMessage } from '../../src/api';
+import { getActiveBotConversationStyle, sendTextMessage } from '../../src/api';
 
 describe('meinchat api — sendTextMessage meta (S70.1)', () => {
   beforeEach(() => {
@@ -36,5 +36,27 @@ describe('meinchat api — sendTextMessage meta (S70.1)', () => {
       body: 'Pro',
       meta: { kind: 'bot_action', action_data: 'subscription:plan:2' },
     });
+  });
+});
+
+describe('meinchat api — getActiveBotConversationStyle (S70.4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('GETs the public active-style route and returns {name, tokens}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ name: 'Walkthrough', tokens: { accent: '#3b6ef0' } }),
+      }),
+    );
+    const style = await getActiveBotConversationStyle();
+    const [url] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('/api/v1/bot-conversation-style/active');
+    expect(style).toEqual({ name: 'Walkthrough', tokens: { accent: '#3b6ef0' } });
   });
 });

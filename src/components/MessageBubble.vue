@@ -25,8 +25,16 @@
         :alt="`Image from @${message.sender_nickname}`"
       >
     </div>
+    <!-- S70.4 — bot_choices show the clean prompt (meta.text) instead of the
+         numbered fallback body; all other kinds suppress the body entirely. -->
     <div
-      v-if="message.body"
+      v-if="richKind === 'bot_choices'"
+      class="bubble__body"
+    >
+      <SafeLinkify :text="choicesText" />
+    </div>
+    <div
+      v-else-if="showPlainBody"
       class="bubble__body"
     >
       <SafeLinkify :text="message.body" />
@@ -37,6 +45,87 @@
         class="bubble__time"
       >{{ formattedTime }}</span>
     </div>
+
+    <!-- S70.4 — bot_menu: a tidy command list; tapping a row sends the command. -->
+    <div
+      v-if="botMenuCommands.length"
+      class="botchat-menu"
+      data-testid="bot-menu"
+    >
+      <button
+        v-for="(entry, index) in botMenuCommands"
+        :key="`${entry.command}-${index}`"
+        type="button"
+        class="botchat-menu-row"
+        data-testid="bot-menu-row"
+        @click="emit('send-command', entry.command)"
+      >
+        <span
+          class="botchat-menu-row__command"
+          data-testid="bot-menu-command"
+        >{{ entry.command }}</span>
+        <span
+          class="botchat-menu-row__description"
+          data-testid="bot-menu-description"
+        >{{ entry.description }}</span>
+      </button>
+    </div>
+
+    <!-- S70.4 — bot_cart: a cart summary card (server-formatted money strings). -->
+    <div
+      v-if="botCart"
+      class="botchat-cart"
+      data-testid="bot-cart"
+    >
+      <template v-if="botCart.items.length">
+        <div
+          v-for="(item, index) in botCart.items"
+          :key="`${item.name}-${index}`"
+          class="botchat-cart__row"
+          data-testid="bot-cart-item"
+        >
+          <span
+            class="botchat-cart__name"
+            data-testid="bot-cart-item-name"
+          >{{ item.name }}</span>
+          <span
+            class="botchat-cart__qty"
+            data-testid="bot-cart-item-qty"
+          >×{{ item.quantity }}</span>
+          <span
+            class="botchat-cart__line-total"
+            data-testid="bot-cart-item-total"
+          >{{ item.line_total }}</span>
+        </div>
+        <div class="botchat-cart__divider" />
+        <div
+          class="botchat-cart__total"
+          data-testid="bot-cart-total"
+        >
+          <span>{{ $t('meinchat.cart.total') }}</span>
+          <span>{{ botCart.total }} {{ botCart.currency }}</span>
+        </div>
+        <button
+          type="button"
+          class="botchat-cart__checkout"
+          data-testid="bot-cart-checkout"
+          @click="emit('send-command', CHECKOUT_COMMAND)"
+        >
+          {{ $t('meinchat.cart.checkout') }}
+        </button>
+      </template>
+      <div
+        v-else
+        class="botchat-cart__empty"
+        data-testid="bot-cart-empty"
+      >
+        <p>{{ $t('meinchat.cart.empty') }}</p>
+        <p class="botchat-cart__empty-hint">
+          {{ $t('meinchat.cart.emptyHint') }}
+        </p>
+      </div>
+    </div>
+
     <div
       v-if="botChoices.length"
       class="botchat-choices"
@@ -71,7 +160,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import SafeLinkify from './SafeLinkify.vue';
-import type { BotChoice, MessageRow } from '../api';
+import type { BotCartItem, BotChoice, BotMenuCommand, MessageRow } from '../api';
 
 const props = defineProps<{
   message: MessageRow;
@@ -80,15 +169,61 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'select-choice': [choice: BotChoice];
+  // S70.4 — a tapped menu row / cart checkout sends a command body as a normal
+  // message (the bot then runs it). The view forwards this to the store.
+  'send-command': [command: string];
 }>();
+
+const CHECKOUT_COMMAND = '/checkout';
+
+// S70.4 — the rich kinds this client knows how to render. For these we SUPPRESS
+// the plain `body` (it's only the fallback for non-rich clients); an unknown
+// kind, or no `meta`, always renders the plain body (regression).
+const KNOWN_RICH_KINDS = ['bot_choices', 'bot_menu', 'bot_cart'] as const;
+
+// Only INCOMING (not `mine`) rich prompts render their interactive UI; the
+// user's own tap echoes / plain messages render as plain bubbles.
+const richKind = computed<string | null>(() => {
+  if (props.mine) return null;
+  const kind = props.message.meta?.kind;
+  if (kind && (KNOWN_RICH_KINDS as readonly string[]).includes(kind)) return kind;
+  return null;
+});
+
+// S70.4 — `bot_choices` carries an optional clean prompt (`meta.text`) shown
+// in place of the body's numbered list; fall back to the body otherwise.
+const choicesText = computed<string>(() =>
+  props.message.meta?.text ?? props.message.body,
+);
+
+// Render the plain body unless a KNOWN rich kind supplies its own rendering.
+const showPlainBody = computed<boolean>(
+  () => Boolean(props.message.body) && richKind.value === null,
+);
 
 // S70.1 — clickable choice cards render only on INCOMING bot prompts
 // (`bot_choices`). Outgoing taps / plain messages have no cards.
 const botChoices = computed<BotChoice[]>(() => {
-  if (props.mine) return [];
-  if (props.message.meta?.kind !== 'bot_choices') return [];
-  return props.message.meta.choices ?? [];
+  if (richKind.value !== 'bot_choices') return [];
+  return props.message.meta?.choices ?? [];
 });
+
+const botMenuCommands = computed<BotMenuCommand[]>(() => {
+  if (richKind.value !== 'bot_menu') return [];
+  return props.message.meta?.commands ?? [];
+});
+
+const botCart = computed<{ items: BotCartItem[]; total: string; currency: string } | null>(
+  () => {
+    if (richKind.value !== 'bot_cart') return null;
+    const meta = props.message.meta;
+    return {
+      items: meta?.items ?? [],
+      total: meta?.total ?? '0',
+      currency: meta?.currency ?? '',
+    };
+  },
+);
 
 // Renderable fullres image URL. PLAIN → the storage URL directly; e2e_v1 →
 // the decrypted `blob:` URL the meinchat-plus provider put in `attachmentUrls`
@@ -218,6 +353,98 @@ const systemTokenTransferText = computed(() => {
 .botchat-card__hint {
   flex: 0 0 auto;
   margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--vbwd-botchat-hint, #5b6577);
+}
+
+/* S70.4 — bot_menu command list. Same --vbwd-botchat-* theme as the cards. */
+.botchat-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vbwd-botchat-gap, 6px);
+  margin-top: 8px;
+}
+.botchat-menu-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--vbwd-botchat-card-bg, #fff);
+  border: 1px solid var(--vbwd-botchat-card-border, #e6e9ef);
+  border-radius: var(--vbwd-botchat-card-radius, 12px);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.botchat-menu-row:hover {
+  border-color: var(--vbwd-botchat-accent, #3b6ef0);
+  box-shadow: 0 1px 4px rgba(59, 110, 240, 0.18);
+}
+.botchat-menu-row__command {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--vbwd-botchat-accent, #3b6ef0);
+}
+.botchat-menu-row__description {
+  font-size: 0.82rem;
+  color: var(--vbwd-botchat-hint, #5b6577);
+}
+
+/* S70.4 — bot_cart summary card. */
+.botchat-cart {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--vbwd-botchat-card-bg, #fff);
+  border: 1px solid var(--vbwd-botchat-card-border, #e6e9ef);
+  border-radius: var(--vbwd-botchat-card-radius, 12px);
+  color: var(--vbwd-botchat-card-fg, #1d2433);
+}
+.botchat-cart__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  padding: 2px 0;
+}
+.botchat-cart__name { flex: 1 1 auto; }
+.botchat-cart__qty {
+  flex: 0 0 auto;
+  color: var(--vbwd-botchat-hint, #5b6577);
+}
+.botchat-cart__line-total {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.botchat-cart__divider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--vbwd-botchat-card-border, #e6e9ef);
+}
+.botchat-cart__total {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.botchat-cart__checkout {
+  margin-top: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: var(--vbwd-botchat-card-radius, 12px);
+  background: var(--vbwd-botchat-accent, #3b6ef0);
+  color: var(--vbwd-botchat-badge-fg, #fff);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.botchat-cart__empty { text-align: center; }
+.botchat-cart__empty p { margin: 0.2rem 0; }
+.botchat-cart__empty-hint {
   font-size: 0.82rem;
   color: var(--vbwd-botchat-hint, #5b6577);
 }

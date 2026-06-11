@@ -62,6 +62,12 @@
     "nav": {
       "messages": "Messages"
     },
-    "unreadTotal": "Unread total"
+    "unreadTotal": "Unread total",
+    "cart": {
+      "total": "Total",
+      "checkout": "Proceed to checkout",
+      "empty": "Your cart is empty",
+      "emptyHint": "Send /tarifs to browse plans"
+    }
   }
 }

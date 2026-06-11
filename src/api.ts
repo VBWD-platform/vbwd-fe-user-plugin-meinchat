@@ -79,14 +79,52 @@ export interface BotChoice {
   hint?: string;
 }
 
-// S70.1 — structured/interactive content riding alongside the plain `body`.
-// `bot_choices` (bot → user) carries clickable cards; `bot_action` (user → bot)
-// carries the tapped card's `action_data`. Absent on plain messages → they
-// render exactly as before (Liskov: non-`meta` clients are unaffected).
+// S70.4 — a command-menu row (from /help): the command body to resend and a
+// human description. Tapping the row sends `command` as a normal message.
+export interface BotMenuCommand {
+  command: string;
+  description: string;
+}
+
+// S70.4 — one line of a bot cart. All money is a SERVER-formatted string —
+// the fe does no price math (S53 §Security): it renders the strings as given.
+export interface BotCartItem {
+  name: string;
+  quantity: number;
+  unit_price: string;
+  line_total: string;
+}
+
+// S70.1/70.4 — structured/interactive content riding alongside the plain
+// `body`. Optional, back-compatible, and a discriminated union over `kind`:
+//   - `bot_choices` (bot → user): clickable cards (+ optional clean `text`
+//     prompt that replaces the numbered `body` on rich clients).
+//   - `bot_menu` (bot → user): a tidy command list (/help).
+//   - `bot_cart` (bot → user): a cart summary card.
+//   - `bot_action` (user → bot): the tapped card's opaque `action_data`.
+// Absent on plain messages → they render exactly as before (Liskov: non-`meta`
+// clients are unaffected). Unknown `kind`s fall back to the plain `body`.
 export interface MessageMeta {
   kind: string;
+  // bot_choices
+  text?: string;
   choices?: BotChoice[];
+  // bot_menu
+  commands?: BotMenuCommand[];
+  // bot_cart
+  items?: BotCartItem[];
+  total?: string;
+  currency?: string;
+  // bot_action
   action_data?: string;
+}
+
+// S70.4 — the portable bot-conversation style the fe-user themes the bot chat
+// with. `tokens` is a (server-whitelisted) subset of the `--vbwd-botchat-*`
+// vars; missing keys fall back to the component CSS defaults.
+export interface BotConversationStyle {
+  name: string | null;
+  tokens: Record<string, string>;
 }
 
 export interface MessageRow {
@@ -330,6 +368,15 @@ export async function mintStreamToken(): Promise<StreamTokenResponse> {
 export async function getMessagingLimits(): Promise<MessagingLimits> {
   const res = await fetch('/api/v1/messaging/limits', { headers: authHeaders() });
   return jsonOrThrow<MessagingLimits>(res);
+}
+
+// S70.4 — the active portable bot-conversation style (public, no auth needed —
+// it themes a public chat surface). The fe applies `tokens` as
+// `--vbwd-botchat-*` custom properties; a failed fetch falls back to the CSS
+// defaults baked into the bubble component.
+export async function getActiveBotConversationStyle(): Promise<BotConversationStyle> {
+  const res = await fetch('/api/v1/bot-conversation-style/active');
+  return jsonOrThrow<BotConversationStyle>(res);
 }
 
 // ── token transfer ──────────────────────────────────────────────────────────

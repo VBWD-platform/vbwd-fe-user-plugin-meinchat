@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="shellEl"
     class="meinchat-shell"
     data-testid="meinchat-conversation"
   >
@@ -25,6 +26,7 @@
         :message="message"
         :mine="message.sender_id === currentUserId"
         @select-choice="onSelectChoice"
+        @send-command="onSendCommand"
       />
     </div>
 
@@ -72,6 +74,7 @@ import MessageComposer from '../components/MessageComposer.vue';
 import TokenTransferDialog from '../components/TokenTransferDialog.vue';
 import { useMeinchatStore } from '../stores/useMeinchatStore';
 import { useMessagingStream } from '../composables/useMessagingStream';
+import { applyBotConversationStyle } from '../composables/useBotConversationStyle';
 import type { BotChoice, ConversationRow } from '../api';
 import {
   getComposerPrecheck,
@@ -93,6 +96,7 @@ const overlayComponent = getConversationOverlay();
 const composerBlocked = ref(false);
 const composerHint = ref('');
 const messagesArea = ref<HTMLElement | null>(null);
+const shellEl = ref<HTMLElement | null>(null);
 const stream = useMessagingStream();
 let unregisterListener: (() => void) | null = null;
 
@@ -113,6 +117,13 @@ const currentUserId = computed(() => {
 });
 
 onMounted(async () => {
+  // S70.4 — theme the bot chat from the active portable style, applying its
+  // tokens as `--vbwd-botchat-*` vars on this conversation root. Best-effort:
+  // a missing/failed fetch leaves the bubble CSS fallbacks in place.
+  if (shellEl.value) {
+    void applyBotConversationStyle(shellEl.value);
+  }
+
   // openConversation now owns the message load: cache-first paint, then a
   // server-window fetch merged by id (S28.2 §2.3). No separate
   // fetchMessages call here — that would replace the merged view with a
@@ -178,6 +189,22 @@ async function onSelectChoice(choice: BotChoice) {
   error.value = '';
   try {
     await store.sendAction(conversationId.value, choice);
+  } catch (err: any) {
+    error.value = err?.error || 'Failed to send';
+  } finally {
+    sending.value = false;
+  }
+}
+
+// S70.4 — tapping a bot_menu row or the cart's checkout affordance sends the
+// command as a normal message body (the bot then runs it), reusing the same
+// send path as typed input (DRY — no parallel transport).
+async function onSendCommand(command: string) {
+  if (!conversationId.value || sending.value) return;
+  sending.value = true;
+  error.value = '';
+  try {
+    await store.sendText(conversationId.value, command);
   } catch (err: any) {
     error.value = err?.error || 'Failed to send';
   } finally {

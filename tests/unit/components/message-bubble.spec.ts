@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
 import MessageBubble from '../../../src/components/MessageBubble.vue';
 
+// Echo the i18n key so cart copy renders without coupling specs to translations.
+const i18nMock = { $t: (key: string) => key };
+
 const baseMessage = {
   id: 'm1',
   conversation_id: 'cv1',
@@ -196,5 +199,172 @@ describe('MessageBubble — S70.1 bot-choice cards', () => {
     });
     expect(wrapper.findAll('[data-testid="bot-choice-card"]')).toHaveLength(0);
     expect(wrapper.find('.bubble__body').text()).toBe('Pro');
+  });
+});
+
+describe('MessageBubble — S70.4 bot_choices meta.text + body suppression', () => {
+  const choicesWithText = {
+    ...baseMessage,
+    sender_id: 'u-bot',
+    body: '1. Starter\n2. Pro\nReply with the number',
+    meta: {
+      kind: 'bot_choices',
+      text: 'Choose a tarif plan:',
+      choices: [
+        { label: 'Starter', action_data: 'subscription:plan:1', hint: '€9/mo' },
+        { label: 'Pro', action_data: 'subscription:plan:2', hint: '€29/mo' },
+      ],
+    },
+  };
+
+  it('shows meta.text as the bubble text instead of the raw numbered body', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: choicesWithText, mine: false },
+    });
+    const body = wrapper.find('.bubble__body');
+    expect(body.text()).toBe('Choose a tarif plan:');
+    expect(body.text()).not.toContain('Reply with the number');
+  });
+
+  it('still renders the priced cards with hints', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: choicesWithText, mine: false },
+    });
+    const cards = wrapper.findAll('[data-testid="bot-choice-card"]');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].find('[data-testid="bot-choice-hint"]').text()).toBe('€9/mo');
+    expect(cards[1].find('[data-testid="bot-choice-hint"]').text()).toBe('€29/mo');
+  });
+});
+
+describe('MessageBubble — S70.4 bot_menu', () => {
+  const menuMessage = {
+    ...baseMessage,
+    sender_id: 'u-bot',
+    body: '/tarifs - Browse tarif plans\n/help - Show help',
+    meta: {
+      kind: 'bot_menu',
+      commands: [
+        { command: '/tarifs', description: 'Browse tarif plans' },
+        { command: '/help', description: 'Show help' },
+      ],
+    },
+  };
+
+  it('renders one row per command (command + description), suppressing the body', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: menuMessage, mine: false },
+    });
+    const rows = wrapper.findAll('[data-testid="bot-menu-row"]');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].find('[data-testid="bot-menu-command"]').text()).toBe('/tarifs');
+    expect(rows[0].find('[data-testid="bot-menu-description"]').text()).toBe(
+      'Browse tarif plans',
+    );
+    // The run-on plain body is suppressed for the known rich kind.
+    expect(wrapper.find('.bubble__body').exists()).toBe(false);
+  });
+
+  it('tapping a command row emits ``send-command`` with that command', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: menuMessage, mine: false },
+    });
+    await wrapper.findAll('[data-testid="bot-menu-row"]')[1].trigger('click');
+    const emitted = wrapper.emitted('send-command');
+    expect(emitted).toHaveLength(1);
+    expect(emitted![0][0]).toBe('/help');
+  });
+});
+
+describe('MessageBubble — S70.4 bot_cart', () => {
+  const cartMessage = {
+    ...baseMessage,
+    sender_id: 'u-bot',
+    body: 'Your cart: Pro x1 = 29.00. Total 38.00 EUR',
+    meta: {
+      kind: 'bot_cart',
+      items: [
+        { name: 'Pro', quantity: 1, unit_price: '29.00', line_total: '29.00' },
+        {
+          name: 'Priority Support',
+          quantity: 1,
+          unit_price: '9.00',
+          line_total: '9.00',
+        },
+      ],
+      total: '38.00',
+      currency: 'EUR',
+    },
+  };
+
+  it('renders item rows with name, quantity and server-formatted line total', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: cartMessage, mine: false },
+      global: { mocks: i18nMock },
+    });
+    const rows = wrapper.findAll('[data-testid="bot-cart-item"]');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].find('[data-testid="bot-cart-item-name"]').text()).toBe('Pro');
+    expect(rows[0].find('[data-testid="bot-cart-item-qty"]').text()).toContain('1');
+    expect(rows[0].find('[data-testid="bot-cart-item-total"]').text()).toBe('29.00');
+    // The plain fallback body is suppressed for the known rich kind.
+    expect(wrapper.find('.bubble__body').exists()).toBe(false);
+  });
+
+  it('renders the total + currency from the server strings (no client math)', () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: cartMessage, mine: false },
+      global: { mocks: i18nMock },
+    });
+    const total = wrapper.find('[data-testid="bot-cart-total"]');
+    expect(total.text()).toContain('38.00');
+    expect(total.text()).toContain('EUR');
+  });
+
+  it('the "Proceed to checkout" action emits ``send-command`` with /checkout', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: { message: cartMessage, mine: false },
+      global: { mocks: i18nMock },
+    });
+    await wrapper.find('[data-testid="bot-cart-checkout"]').trigger('click');
+    const emitted = wrapper.emitted('send-command');
+    expect(emitted).toHaveLength(1);
+    expect(emitted![0][0]).toBe('/checkout');
+  });
+
+  it('an empty cart shows the empty state and no checkout button', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          ...cartMessage,
+          meta: { kind: 'bot_cart', items: [], total: '0', currency: 'EUR' },
+        },
+        mine: false,
+      },
+      global: { mocks: i18nMock },
+    });
+    expect(wrapper.find('[data-testid="bot-cart-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bot-cart-checkout"]').exists()).toBe(false);
+    expect(wrapper.findAll('[data-testid="bot-cart-item"]')).toHaveLength(0);
+  });
+});
+
+describe('MessageBubble — S70.4 unknown-kind regression', () => {
+  it('an unknown meta.kind renders the plain body unchanged (no suppression)', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          ...baseMessage,
+          sender_id: 'u-bot',
+          body: 'a plain reply',
+          meta: { kind: 'something_new' },
+        },
+        mine: false,
+      },
+    });
+    expect(wrapper.find('.bubble__body').text()).toBe('a plain reply');
+    expect(wrapper.findAll('[data-testid="bot-choice-card"]')).toHaveLength(0);
+    expect(wrapper.findAll('[data-testid="bot-menu-row"]')).toHaveLength(0);
+    expect(wrapper.findAll('[data-testid="bot-cart-item"]')).toHaveLength(0);
   });
 });
