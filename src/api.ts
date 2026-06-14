@@ -130,6 +130,9 @@ export interface BotConversationStyle {
 export interface MessageRow {
   id: string;
   conversation_id: string;
+  // S86.1 — set on room messages (exactly one of conversation_id / room_id is
+  // populated per the backend CHECK). Absent/empty for 1:1 messages.
+  room_id?: string;
   sender_id: string;
   sender_nickname: string;
   body: string;
@@ -147,6 +150,54 @@ export interface MessageRow {
   // S28.4 — local attachment-id → `blob:` URL map set by the e2e provider on
   // hydration (decrypted image previews). Absent for plain rows.
   attachmentUrls?: Record<string, string>;
+}
+
+// S86.1 — a multi-party room (N-party conversation with membership + roles).
+// Mirrors the 1:1 `ConversationRow` preview fields, plus room-specific
+// metadata. The CALLER's per-membership `unread_count`/`last_read_at` are
+// folded in by the backend serializer.
+export interface RoomRow {
+  id: string;
+  name: string | null;
+  protocol: string;
+  capabilities: Record<string, unknown>;
+  last_message_at: string | null;
+  last_message_preview: string | null;
+  unread_count: number;
+  last_read_at: string | null;
+  // Some serializers include an inline member summary; never relied upon for
+  // role gating (the view fetches `listRoomMembers` for the authoritative list).
+  members?: RoomMemberRow[];
+  member_count?: number;
+}
+
+export interface RoomMemberRow {
+  user_id: string;
+  role: 'admin' | 'member';
+  nickname: string | null;
+}
+
+export interface CreateRoomInput {
+  member_nicknames: string[];
+  name?: string;
+}
+
+// S86.3 — the bot-widget "Start Conversation" contract. The member list +
+// visibility are SERVER-TRUSTED from the stored widget; the client only sends
+// the slug (+ a `display_name` for public widgets). `access_token` is returned
+// for `public` widgets only (the GUEST JWT scoped to its room); `token_balance`
+// is present when the guest token-economy is on (D11).
+export interface WidgetStartInput {
+  widget_slug: string;
+  display_name?: string;
+}
+
+export interface WidgetStartResult {
+  room_id: string;
+  self_nickname: string;
+  members: RoomMemberRow[];
+  access_token?: string;
+  token_balance?: number;
 }
 
 export interface TokenTransferResult {
@@ -178,10 +229,22 @@ export interface MessagingLimits {
 }
 
 
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+/**
+ * Build the JSON request headers.
+ *
+ * `authToken` (S86.3) lets a caller override the bearer with an explicitly
+ * scoped token — e.g. a public widget's GUEST JWT (`access_token`) so its room
+ * calls authenticate as the guest, NOT the app's global session. When omitted
+ * the app session token from localStorage is used (the original behaviour).
+ */
+function authHeaders(
+  extra: Record<string, string> = {},
+  authToken?: string,
+): Record<string, string> {
+  const bearer = authToken ?? localStorage.getItem('auth_token') ?? '';
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${localStorage.getItem('auth_token') ?? ''}`,
+    Authorization: `Bearer ${bearer}`,
     ...extra,
   };
 }
@@ -357,10 +420,10 @@ export async function deleteMessage(
   return jsonOrThrow<void>(res);
 }
 
-export async function mintStreamToken(): Promise<StreamTokenResponse> {
+export async function mintStreamToken(authToken?: string): Promise<StreamTokenResponse> {
   const res = await fetch('/api/v1/messaging/stream/token', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: authHeaders({}, authToken),
   });
   return jsonOrThrow<StreamTokenResponse>(res);
 }
@@ -368,6 +431,147 @@ export async function mintStreamToken(): Promise<StreamTokenResponse> {
 export async function getMessagingLimits(): Promise<MessagingLimits> {
   const res = await fetch('/api/v1/messaging/limits', { headers: authHeaders() });
   return jsonOrThrow<MessagingLimits>(res);
+}
+
+// ── rooms (S86.1) ─────────────────────────────────────────────────────────
+// Multi-party rooms reuse the same message shape + SSE stream as 1:1 chats;
+// the only difference is the parent FK (`room_id` instead of `conversation_id`)
+// and membership/role metadata. Rooms run the `plain` protocol in S86.1
+// (E2E is layered on in S86.2), so create always pins `accepted_protocols`.
+
+const ROOM_PROTOCOLS_PLAIN = ['plain'];
+
+export async function createRoom(input: CreateRoomInput): Promise<RoomRow> {
+  const res = await fetch('/api/v1/messaging/rooms', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ ...input, accepted_protocols: ROOM_PROTOCOLS_PLAIN }),
+  });
+  return jsonOrThrow<RoomRow>(res);
+}
+
+export async function listRooms(): Promise<{ items: RoomRow[] }> {
+  const res = await fetch('/api/v1/messaging/rooms', { headers: authHeaders() });
+  return jsonOrThrow<{ items: RoomRow[] }>(res);
+}
+
+export async function getRoom(roomId: string): Promise<RoomRow> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}`, { headers: authHeaders() });
+  return jsonOrThrow<RoomRow>(res);
+}
+
+export async function listRoomMembers(roomId: string): Promise<{ items: RoomMemberRow[] }> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/members`, {
+    headers: authHeaders(),
+  });
+  return jsonOrThrow<{ items: RoomMemberRow[] }>(res);
+}
+
+// The room read/send/mark functions accept an optional `authToken` (S86.3) so a
+// public-widget GUEST can drive its own room with the minted `access_token`
+// instead of the app session — every other caller passes nothing and keeps the
+// app-session behaviour (one home for each call shape; DRY).
+export async function listRoomMessages(
+  roomId: string,
+  options: { before?: string; limit?: number } = {},
+  authToken?: string,
+): Promise<{ items: MessageRow[] }> {
+  const params = new URLSearchParams();
+  if (options.before) params.set('before', options.before);
+  if (options.limit) params.set('limit', String(options.limit));
+  const qs = params.toString();
+  const url = `/api/v1/messaging/rooms/${roomId}/messages${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, { headers: authHeaders({}, authToken) });
+  return jsonOrThrow<{ items: MessageRow[] }>(res);
+}
+
+// S86.3 D11 — a metered guest's room send response carries the guest's balance
+// AFTER the per-word question charge, so the widget can update without a second
+// round-trip. Absent for non-guest / non-widget / economy-off sends.
+export type RoomSendResult = MessageRow & { token_balance?: number };
+
+export async function sendRoomMessage(
+  roomId: string,
+  body: string,
+  meta?: MessageMeta,
+  authToken?: string,
+): Promise<RoomSendResult> {
+  // Mirrors `sendTextMessage` — `meta` is omitted unless provided so a plain
+  // room send is byte-for-byte identical to the 1:1 plain send. A 402
+  // `insufficient_tokens` body is thrown like any other error (S86.3 D11).
+  const payload: { body: string; meta?: MessageMeta } = { body };
+  if (meta) payload.meta = meta;
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/messages`, {
+    method: 'POST',
+    headers: authHeaders({}, authToken),
+    body: JSON.stringify(payload),
+  });
+  return jsonOrThrow<RoomSendResult>(res);
+}
+
+export async function markRoomRead(roomId: string, authToken?: string): Promise<void> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/read`, {
+    method: 'POST',
+    headers: authHeaders({}, authToken),
+  });
+  return jsonOrThrow<void>(res);
+}
+
+// S86.3 D11 (word-based) — the caller's live token balance. The guest JWT
+// authorises this, so the widget refreshes its remaining-tokens count after a
+// bot answer arrives (the answer's words are charged server-side too).
+export async function getWidgetBalance(authToken?: string): Promise<{ token_balance: number }> {
+  const res = await fetch('/api/v1/messaging/widget/balance', {
+    headers: authHeaders({}, authToken),
+  });
+  return jsonOrThrow<{ token_balance: number }>(res);
+}
+
+export async function inviteRoomMember(roomId: string, nickname: string): Promise<void> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/invite`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ nickname }),
+  });
+  return jsonOrThrow<void>(res);
+}
+
+export async function leaveRoom(roomId: string): Promise<void> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/leave`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return jsonOrThrow<void>(res);
+}
+
+export async function removeRoomMember(roomId: string, userId: string): Promise<void> {
+  const res = await fetch(`/api/v1/messaging/rooms/${roomId}/members/${userId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  return jsonOrThrow<void>(res);
+}
+
+// S86.3 — start (or, for a returning guest, reuse) a bot-widget conversation.
+// No auth is required for a `public` widget's first visit; a returning guest
+// presents its stored `access_token` so the backend reuses the same GUEST +
+// token balance (D12), and a `logged_in` widget rides the app session. The
+// member list + visibility come from the STORED widget, never the request.
+export async function startWidgetConversation(
+  input: WidgetStartInput,
+  authToken?: string,
+): Promise<WidgetStartResult> {
+  // Only attach Authorization when a token is genuinely present — a first
+  // public visit must reach the backend as anonymous (an empty `Bearer `
+  // would look like a malformed logged-in attempt).
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  const res = await fetch('/api/v1/messaging/widget/start', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(input),
+  });
+  return jsonOrThrow<WidgetStartResult>(res);
 }
 
 // S70.4 — the active portable bot-conversation style (public, no auth needed —

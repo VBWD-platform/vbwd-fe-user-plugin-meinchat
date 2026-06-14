@@ -36,6 +36,16 @@ export const meinchatPlugin: IPlugin = {
       component: () => import('./src/views/ContactsView.vue'),
       meta: { requiresAuth: true },
     });
+    // S86.1 — room view. Registered BEFORE the catch-all `:nickname` route so
+    // `/dashboard/messages/rooms/<id>` resolves to the room view, not a
+    // conversation with a peer literally nicknamed "rooms".
+    sdk.addRoute({
+      path: '/dashboard/messages/rooms/:roomId',
+      name: 'meinchat-room',
+      component: () => import('./src/views/RoomView.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    });
     sdk.addRoute({
       path: '/dashboard/messages/:nickname',
       name: 'meinchat-conversation',
@@ -58,6 +68,20 @@ export const meinchatPlugin: IPlugin = {
     sdk.addTranslations('ru', ru);
     sdk.addTranslations('th', th);
     sdk.addTranslations('zh', zh);
+
+    // S86.3 — register the bot-widget as a CMS `vue-component` widget so a CMS
+    // editor can drop a `MeinchatChatWidget` into a layout. Soft dependency:
+    // if the CMS plugin is absent the registry import fails harmlessly and the
+    // rest of messaging works unchanged.
+    import('../cms/src/registry/vueComponentRegistry')
+      .then(({ registerCmsVueComponent }) => {
+        import('./src/components/MeinchatChatWidget.vue').then((module) => {
+          registerCmsVueComponent('MeinchatChatWidget', module.default);
+        });
+      })
+      .catch(() => {
+        // CMS plugin not installed — skip widget registration.
+      });
 
     // Inject a compact nickname picker ABOVE the core Profile cards —
     // the user picks a handle first, then sees the rest of Profile.

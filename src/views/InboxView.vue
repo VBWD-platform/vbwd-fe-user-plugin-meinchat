@@ -42,6 +42,28 @@
       />
     </div>
 
+    <div
+      v-if="roomsStore.rooms.length > 0"
+      data-testid="meinchat-rooms-section"
+    >
+      <RoomInboxRow
+        v-for="room in roomsStore.rooms"
+        :key="room.id"
+        :room="room"
+        @click="openRoom(room)"
+      />
+    </div>
+
+    <button
+      type="button"
+      class="meinchat-fab meinchat-fab--rooms"
+      data-testid="meinchat-new-room"
+      :title="$t('meinchat.rooms.create')"
+      @click="createRoomOpen = true"
+    >
+      # {{ $t('meinchat.rooms.new') }}
+    </button>
+
     <button
       type="button"
       class="meinchat-fab"
@@ -58,6 +80,11 @@
       @save-contact="onSaveContact"
       @cancel="findOpen = false"
     />
+    <CreateRoomDialog
+      v-if="createRoomOpen"
+      @create="onCreateRoom"
+      @cancel="createRoomOpen = false"
+    />
     <AddContactDialog
       v-if="addContactOpen"
       @added="onContactAdded"
@@ -67,26 +94,63 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import InboxRow from '../components/InboxRow.vue';
+import RoomInboxRow from '../components/RoomInboxRow.vue';
 import FindUserDialog from '../components/FindUserDialog.vue';
+import CreateRoomDialog from '../components/CreateRoomDialog.vue';
 import AddContactDialog from '../components/AddContactDialog.vue';
 import { useMeinchatStore } from '../stores/useMeinchatStore';
-import type { ConversationRow } from '../api';
+import { useRoomsStore } from '../stores/useRoomsStore';
+import type { ConversationRow, RoomRow } from '../api';
 
 const router = useRouter();
 const store = useMeinchatStore();
+const roomsStore = useRoomsStore();
 const tab = ref<'inbox' | 'contacts'>('inbox');
 const findOpen = ref(false);
+const createRoomOpen = ref(false);
 const addContactOpen = ref(false);
 const prefillNickname = ref<string | null>(null);
 
-onMounted(() => store.fetchConversations());
+// Auto-refresh: re-fetch every 10 s while the inbox is mounted so the
+// preview / unread count reflect peer activity without a manual reload.
+// Mirrors the iOS InboxViewModel.startPolling() pattern.
+const INBOX_POLL_INTERVAL_MS = 10_000;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  store.fetchConversations();
+  roomsStore.fetchRooms();
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      store.fetchConversations();
+      roomsStore.fetchRooms();
+    }
+  }, INBOX_POLL_INTERVAL_MS);
+});
+
+onBeforeUnmount(() => {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+});
 
 function open(conv: ConversationRow) {
   if (!conv.peer_nickname) return;
   router.push(`/dashboard/messages/${conv.peer_nickname}`);
+}
+
+function openRoom(room: RoomRow) {
+  router.push(`/dashboard/messages/rooms/${room.id}`);
+}
+
+async function onCreateRoom(input: { member_nicknames: string[]; name?: string }) {
+  createRoomOpen.value = false;
+  const room = await roomsStore.create(input);
+  router.push(`/dashboard/messages/rooms/${room.id}`);
 }
 
 async function onStartChat(nickname: string) {
@@ -136,5 +200,10 @@ function onContactAdded() {
   background: var(--vbwd-color-primary, #3b82f6); color: #fff;
   border: 0; padding: 0.7rem 1rem; border-radius: 999px;
   cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.meinchat-fab--rooms {
+  bottom: 4.2rem;
+  background: var(--vbwd-card-bg-soft, #f3f4f6);
+  color: var(--vbwd-text, #222);
 }
 </style>

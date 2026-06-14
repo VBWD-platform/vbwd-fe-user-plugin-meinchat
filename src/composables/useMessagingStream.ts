@@ -23,9 +23,13 @@ export function useMessagingStream() {
   let listeners: Listener[] = [];
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let manuallyClosed = false;
+  // S86.3 — when set (a public bot-widget GUEST), the stream token is minted
+  // with the guest's scoped JWT instead of the app session, so the SSE
+  // subscribes the guest to its own room. Undefined for normal app users.
+  let authToken: string | undefined;
 
   async function _open() {
-    const { stream_token } = await mintStreamToken();
+    const { stream_token } = await mintStreamToken(authToken);
     const url = `/api/v1/messaging/stream?stream_token=${encodeURIComponent(stream_token)}`;
     source = new EventSource(url);
 
@@ -65,8 +69,9 @@ export function useMessagingStream() {
       };
     },
 
-    async connect() {
+    async connect(token?: string) {
       manuallyClosed = false;
+      authToken = token;
       await _open();
     },
 

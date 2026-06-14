@@ -68,6 +68,29 @@
       "checkout": "Proceed to checkout",
       "empty": "Your cart is empty",
       "emptyHint": "Send /tarifs to browse plans"
+    },
+    "rooms": {
+      "create": "Create room",
+      "new": "New room",
+      "untitled": "Untitled room",
+      "namePlaceholder": "Room name (optional)",
+      "invite": "Invite",
+      "add": "Add",
+      "leave": "Leave",
+      "removeMember": "Remove member",
+      "save": "Save"
+    },
+    "widget": {
+      "loginRequired": "Please log in to chat.",
+      "loginCta": "Log in",
+      "chooseNickname": "Choose a nickname to start chatting",
+      "nicknamePlaceholder": "your-nickname",
+      "saveNickname": "Save nickname",
+      "enterName": "Enter your name to start",
+      "namePlaceholder": "Your name",
+      "balance": "Tokens",
+      "outOfTokens": "You are out of tokens.",
+      "buyTokens": "Buy tokens to continue dialogue"
     }
   }
 }
