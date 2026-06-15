@@ -334,6 +334,59 @@ describe('MeinchatChatWidget (S86.3 slice 3e)', () => {
     expect(link.attributes('href')).toBe('/custom-buy');
   });
 
+  it('buy-tokens link prefers the buy_tokens_href returned by widget/start', async () => {
+    api.startWidgetConversation.mockResolvedValue({
+      room_id: 'room-9',
+      self_nickname: 'guest_7',
+      members: [],
+      access_token: 'guest-jwt',
+      token_balance: 0,
+      buy_tokens_href: '/pricing',
+    });
+    api.listRoomMessages.mockResolvedValue({ items: [] });
+    api.markRoomRead.mockResolvedValue(undefined);
+    api.sendRoomMessage.mockRejectedValue({ code: 'insufficient_tokens' });
+
+    // The per-widget config sets a DIFFERENT href; the start-response value wins.
+    const wrapper = mountWidget({ ...PUBLIC_CONFIG, buy_tokens_href: '/custom-buy' });
+    await flushPromises();
+    await wrapper.find('[data-testid="meinchat-widget-name-input"]').setValue('Sam');
+    await wrapper.find('[data-testid="meinchat-widget-start"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="composer-input"]').setValue('hi');
+    await wrapper.find('[data-testid="message-composer"]').trigger('submit');
+    await flushPromises();
+
+    const link = wrapper.find('[data-testid="meinchat-widget-buy-tokens"] a');
+    expect(link.attributes('href')).toBe('/pricing');
+  });
+
+  it('buy-tokens link falls back to config then /tokens when start omits buy_tokens_href', async () => {
+    api.startWidgetConversation.mockResolvedValue({
+      room_id: 'room-9',
+      self_nickname: 'guest_7',
+      members: [],
+      access_token: 'guest-jwt',
+      token_balance: 0,
+    });
+    api.listRoomMessages.mockResolvedValue({ items: [] });
+    api.markRoomRead.mockResolvedValue(undefined);
+    api.sendRoomMessage.mockRejectedValue({ code: 'insufficient_tokens' });
+
+    // Response omits buy_tokens_href → the per-widget config value is used.
+    const wrapper = mountWidget({ ...PUBLIC_CONFIG, buy_tokens_href: '/custom-buy' });
+    await flushPromises();
+    await wrapper.find('[data-testid="meinchat-widget-name-input"]').setValue('Sam');
+    await wrapper.find('[data-testid="meinchat-widget-start"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="composer-input"]').setValue('hi');
+    await wrapper.find('[data-testid="message-composer"]').trigger('submit');
+    await flushPromises();
+
+    const link = wrapper.find('[data-testid="meinchat-widget-buy-tokens"] a');
+    expect(link.attributes('href')).toBe('/custom-buy');
+  });
+
   it('updates the displayed balance from the send response token_balance', async () => {
     api.startWidgetConversation.mockResolvedValue({
       room_id: 'room-9',

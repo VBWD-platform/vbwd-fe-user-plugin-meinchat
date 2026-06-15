@@ -198,6 +198,9 @@ export interface WidgetStartResult {
   members: RoomMemberRow[];
   access_token?: string;
   token_balance?: number;
+  // Admin-configured token-bundles page link, surfaced by widget/start so the
+  // out-of-tokens "Buy tokens" button can target the configured page.
+  buy_tokens_href?: string;
 }
 
 export interface TokenTransferResult {

@@ -215,8 +215,14 @@ const resolvedWelcome = computed(() => props.config.welcome_message ?? '');
 const resolvedStartLabel = computed(
   () => props.config.start_button_label || 'Start Conversation',
 );
+// The admin-configured plugin value, returned by widget/start, wins over the
+// per-widget config which wins over the built-in default (back-compat).
+const startBuyTokensHref = ref<string | null>(null);
 const buyTokensHref = computed(
-  () => props.config.buy_tokens_href || DEFAULT_BUY_TOKENS_HREF,
+  () =>
+    startBuyTokensHref.value ||
+    props.config.buy_tokens_href ||
+    DEFAULT_BUY_TOKENS_HREF,
 );
 
 // ── reactive state ───────────────────────────────────────────────────────────
@@ -364,7 +370,12 @@ async function startFresh() {
 }
 
 function applyStartResult(
-  result: { room_id: string; access_token?: string; token_balance?: number },
+  result: {
+    room_id: string;
+    access_token?: string;
+    token_balance?: number;
+    buy_tokens_href?: string;
+  },
   presentedToken: string | undefined,
 ) {
   roomId.value = result.room_id;
@@ -378,6 +389,9 @@ function applyStartResult(
   }
   if (typeof result.token_balance === 'number') {
     tokenBalance.value = result.token_balance;
+  }
+  if (result.buy_tokens_href) {
+    startBuyTokensHref.value = result.buy_tokens_href;
   }
 }
 
