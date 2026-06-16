@@ -20,4 +20,5 @@ export type {
   RoomMemberRow,
   WidgetStartResult,
   RoomSendResult,
+  MessageMeta,
 } from '../api';

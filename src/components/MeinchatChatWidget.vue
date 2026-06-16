@@ -119,12 +119,16 @@
           v-if="messages.length === 0 && resolvedWelcome"
           :message="welcomeBubble"
           :mine="false"
+          @send-command="onSendCommand"
+          @select-choice="onSelectChoice"
         />
         <MessageBubble
           v-for="message in messages"
           :key="message.id"
           :message="message"
           :mine="message.sender_id === 'me'"
+          @send-command="onSendCommand"
+          @select-choice="onSelectChoice"
         />
       </div>
 
@@ -179,6 +183,7 @@ import {
   markRoomRead,
   getWidgetBalance,
   type MessageRow,
+  type MessageMeta,
 } from '../widget/widgetApi';
 import { applyBotConversationStyle } from '../composables/useBotConversationStyle';
 import { useMessagingStream } from '../composables/useMessagingStream';
@@ -435,12 +440,12 @@ async function refreshBalance() {
   }
 }
 
-async function onSend(payload: { body: string; file: File | null }) {
-  if (!payload.body) return;
+async function sendBody(body: string, meta?: MessageMeta) {
+  if (!body) return;
   sending.value = true;
   error.value = '';
   try {
-    const row = await sendRoomMessage(roomId.value, payload.body, undefined, guestToken.value);
+    const row = await sendRoomMessage(roomId.value, body, meta, guestToken.value);
     if (!messages.value.some((existing) => existing.id === row.id)) {
       messages.value = [...messages.value, row];
     }
@@ -462,6 +467,28 @@ async function onSend(payload: { body: string; file: File | null }) {
   } finally {
     sending.value = false;
   }
+}
+
+async function onSend(payload: { body: string; file: File | null }) {
+  await sendBody(payload.body);
+}
+
+// S70.4 — a tapped command-menu row sends the command as a normal message; the
+// bot then RUNS it (e.g. `/consultant` claims the sales consultant, after which
+// free text is answered by the consultant). This is what makes the help-menu
+// cards interactive instead of decorative.
+async function onSendCommand(command: string) {
+  await sendBody(command);
+}
+
+// A tapped choice card (e.g. the consultant's "VBWD Enterprise — buy" button)
+// sends a `bot_action` meta carrying the choice's action_data so the backend
+// dispatches it server-side (MeinchatProvider lifts action_data from the meta).
+async function onSelectChoice(choice: { label?: string; action_data: string }) {
+  await sendBody(choice.label || choice.action_data, {
+    kind: 'bot_action',
+    action_data: choice.action_data,
+  });
 }
 
 function isInsufficientTokens(err: unknown): boolean {
