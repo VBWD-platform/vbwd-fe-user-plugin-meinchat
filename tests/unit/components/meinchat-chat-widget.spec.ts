@@ -31,6 +31,13 @@ vi.mock('../../../src/composables/useBotConversationStyle', () => ({
   applyBotConversationStyle: () => Promise.resolve(),
 }));
 
+// The widget navigates internal `url` choices through the app router; mock
+// vue-router so the navigation can be asserted without a real router instance.
+const routerPush = vi.hoisted(() => vi.fn());
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: routerPush }),
+}));
+
 // SSE is best-effort; stub it so mounting never opens a real EventSource, but
 // capture the registered handler so tests can simulate a streamed bot answer.
 let streamHandler: ((event: Record<string, unknown>) => void) | null = null;
@@ -73,6 +80,7 @@ describe('MeinchatChatWidget (S86.3 slice 3e)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     streamHandler = null;
+    routerPush.mockReset();
     api.isAuthenticated.mockReturnValue(false);
     guestStore.loadGuestToken.mockReturnValue(null);
   });
@@ -465,6 +473,103 @@ describe('MeinchatChatWidget (S86.3 slice 3e)', () => {
 
     expect(api.getWidgetBalance).toHaveBeenCalledWith('guest-jwt');
     expect(wrapper.find('[data-testid="meinchat-widget-balance"]').text()).toContain('4');
+  });
+
+  // ── bot-choice navigation (search detail card "Open page") ──────────────────
+  // A search detail card carries an optional `url`. Tapping such a choice must
+  // NAVIGATE the user to that route instead of sending the choice back to the
+  // bot. Choices without a `url` keep the original bot_action send behaviour.
+  async function startRoomWithChoice(choice: Record<string, unknown>) {
+    api.startWidgetConversation.mockResolvedValue({
+      room_id: 'room-9',
+      self_nickname: 'guest_7',
+      members: [],
+      access_token: 'guest-jwt',
+    });
+    api.listRoomMessages.mockResolvedValue({
+      items: [
+        {
+          id: 'bot-card',
+          room_id: 'room-9',
+          sender_id: 'assistant',
+          sender_nickname: 'assistant',
+          body: 'Here it is',
+          attachments: [],
+          sent_at: null,
+          read_at: null,
+          system_kind: null,
+          meta: { kind: 'bot_choices', choices: [choice] },
+        },
+      ],
+    });
+    api.markRoomRead.mockResolvedValue(undefined);
+    api.sendRoomMessage.mockResolvedValue({
+      id: 'm-1',
+      room_id: 'room-9',
+      sender_id: 'me',
+      sender_nickname: 'guest_7',
+      body: 'x',
+      attachments: [],
+      sent_at: null,
+      read_at: null,
+      system_kind: null,
+    });
+
+    const wrapper = mountWidget(PUBLIC_CONFIG);
+    await flushPromises();
+    await wrapper.find('[data-testid="meinchat-widget-name-input"]').setValue('Sam');
+    await wrapper.find('[data-testid="meinchat-widget-start"]').trigger('click');
+    await flushPromises();
+    return wrapper;
+  }
+
+  it('choice WITHOUT url sends a bot_action and does NOT navigate (regression)', async () => {
+    const wrapper = await startRoomWithChoice({
+      label: 'Buy Pro',
+      action_data: 'subscription:plan:2',
+    });
+
+    await wrapper.find('[data-testid="bot-choice-card"]').trigger('click');
+    await flushPromises();
+
+    expect(api.sendRoomMessage).toHaveBeenCalledWith(
+      'room-9',
+      'Buy Pro',
+      { kind: 'bot_action', action_data: 'subscription:plan:2' },
+      'guest-jwt',
+    );
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it('choice WITH an internal /url navigates via the router and does NOT send', async () => {
+    const wrapper = await startRoomWithChoice({
+      label: 'Open page',
+      action_data: 'search:open:abc',
+      url: '/shop/product/widget-pro',
+    });
+
+    await wrapper.find('[data-testid="bot-choice-card"]').trigger('click');
+    await flushPromises();
+
+    expect(routerPush).toHaveBeenCalledWith('/shop/product/widget-pro');
+    expect(api.sendRoomMessage).not.toHaveBeenCalled();
+  });
+
+  it('choice WITH an external http(s) url opens a new tab and does NOT send', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    const wrapper = await startRoomWithChoice({
+      label: 'External docs',
+      action_data: 'search:open:ext',
+      url: 'https://example.com/docs',
+    });
+
+    await wrapper.find('[data-testid="bot-choice-card"]').trigger('click');
+    await flushPromises();
+
+    expect(openSpy).toHaveBeenCalledWith('https://example.com/docs', '_blank', 'noopener');
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(api.sendRoomMessage).not.toHaveBeenCalled();
+    openSpy.mockRestore();
   });
 
   it('display:dock + open_by_default:false renders collapsed (no room/prompt visible)', async () => {

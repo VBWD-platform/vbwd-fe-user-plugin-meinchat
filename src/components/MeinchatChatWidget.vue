@@ -171,6 +171,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, nextTick, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import MessageBubble from './MessageBubble.vue';
 import MessageComposer from './MessageComposer.vue';
 import {
@@ -204,6 +205,11 @@ interface WidgetConfig {
 }
 
 const props = defineProps<{ config: WidgetConfig }>();
+
+// The widget may render inside a CMS page; `useRouter()` resolves the app
+// router when one is installed. It can be undefined outside a router-enabled
+// tree, in which case internal navigation falls back to `window.location`.
+const router = useRouter();
 
 // REVISED D11 — the buy-tokens block links to the future public /tokens page
 // (placeholder for now; the block is the stop signal). Overridable per-widget
@@ -481,14 +487,45 @@ async function onSendCommand(command: string) {
   await sendBody(command);
 }
 
-// A tapped choice card (e.g. the consultant's "VBWD Enterprise — buy" button)
-// sends a `bot_action` meta carrying the choice's action_data so the backend
-// dispatches it server-side (MeinchatProvider lifts action_data from the meta).
-async function onSelectChoice(choice: { label?: string; action_data: string }) {
+// A tapped choice card. A choice carrying a `url` (a search detail card's
+// "Open page") NAVIGATES the user to that route — no message goes back to the
+// bot. Otherwise the card sends a `bot_action` meta carrying its action_data so
+// the backend dispatches it server-side (MeinchatProvider lifts action_data
+// from the meta).
+async function onSelectChoice(choice: {
+  label?: string;
+  action_data: string;
+  url?: string;
+}) {
+  if (choice.url) {
+    navigateToChoiceUrl(choice.url);
+    return;
+  }
   await sendBody(choice.label || choice.action_data, {
     kind: 'bot_action',
     action_data: choice.action_data,
   });
+}
+
+// Internal app paths (leading `/`) route through the app router so navigation
+// stays an SPA transition; if no router is available (rendered outside a
+// router tree) we fall back to a full location change. External `http(s)://`
+// links open in a new, opener-isolated tab.
+function navigateToChoiceUrl(url: string) {
+  if (/^https?:\/\//i.test(url)) {
+    window.open(url, '_blank', 'noopener');
+    return;
+  }
+  if (url.startsWith('/')) {
+    if (router) {
+      void router.push(url);
+    } else {
+      window.location.assign(url);
+    }
+    return;
+  }
+  // A relative or otherwise non-routable url — fall back to a location change.
+  window.location.assign(url);
 }
 
 function isInsufficientTokens(err: unknown): boolean {

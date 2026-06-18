@@ -73,10 +73,17 @@ export interface MessageAttachment {
 // S70.1 — a single bot-choice card: a human label, an opaque + namespaced
 // `action_data` the bridge routes by namespace, and an optional display hint
 // (e.g. a price) shown right-aligned.
+//
+// `url` (search detail card "Open page") is an OPTIONAL navigation target: an
+// internal app route (e.g. `/shop/product/<slug>`, `/booking/<slug>`,
+// `/dashboard/plan/<slug>`) or an external `http(s)://` link. When present,
+// tapping the card NAVIGATES the user there instead of sending `action_data`
+// back to the bot. Absent on ordinary action cards (back-compatible).
 export interface BotChoice {
   label: string;
   action_data: string;
   hint?: string;
+  url?: string;
 }
 
 // S70.4 — a command-menu row (from /help): the command body to resend and a
