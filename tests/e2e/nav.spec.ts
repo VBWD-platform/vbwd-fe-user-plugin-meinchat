@@ -2,7 +2,7 @@
  * meinchat — user dashboard navigation entry
  *
  * The fe-user `meinchat` plugin must register a top-level sidebar nav item
- * (same pattern as `taro` and `chat`) via userNavRegistry.register({...,
+ * (same pattern as `tarot` and `chat`) via userNavRegistry.register({...,
  * testId: 'nav-messages' }) in its activate() hook. This test verifies that
  * a logged-in user sees the entry in the dashboard sidebar and can navigate
  * into the inbox view.
@@ -31,7 +31,7 @@ test.describe('meinchat — user dashboard nav', () => {
     const messagesLink = page.locator('[data-testid="nav-messages"]');
     await expect(messagesLink).toBeVisible({ timeout: 10000 });
 
-    // Must point at the inbox route, same as taro/chat top-level entries
+    // Must point at the inbox route, same as tarot/chat top-level entries
     await expect(messagesLink).toHaveAttribute('href', '/dashboard/messages');
 
     // Standard nav-item class — confirms it's rendered as a top-level entry,
@@ -45,10 +45,10 @@ test.describe('meinchat — user dashboard nav', () => {
     expect(page.url()).toContain('/dashboard/messages');
   });
 
-  test('coexists with the taro and chat top-level entries', async ({ page }) => {
+  test('coexists with the tarot and chat top-level entries', async ({ page }) => {
     // All three sibling plugins should register sidebar items
     await expect(page.locator('[data-testid="nav-messages"]')).toBeVisible();
-    await expect(page.locator('[data-testid="nav-taro"]')).toBeVisible();
+    await expect(page.locator('[data-testid="nav-tarot"]')).toBeVisible();
     await expect(page.locator('[data-testid="nav-chat"]')).toBeVisible();
   });
 });
