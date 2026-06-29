@@ -13,7 +13,7 @@ describe('Meinchat Plugin', () => {
 
   it('declares correct metadata', () => {
     expect(meinchatPlugin.name).toBe('meinchat');
-    expect(meinchatPlugin.version).toBe('1.0.0');
+    expect(meinchatPlugin.version).toBe('26.6.1');
   });
 
   it('registers four routes on install', async () => {

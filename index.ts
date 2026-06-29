@@ -17,7 +17,7 @@ import zh from './locales/zh.json';
 
 export const meinchatPlugin: IPlugin = {
   name: 'meinchat',
-  version: '1.0.0',
+  version: '26.6.1',
   description:
     'Direct messaging between users — nickname directory, address book, ' +
     'image attachments, peer token transfer.',
