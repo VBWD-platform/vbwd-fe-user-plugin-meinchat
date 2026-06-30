@@ -109,6 +109,7 @@ export const meinchatPlugin: IPlugin = {
     userNavRegistry.register({
       pluginName: 'meinchat',
       to: '/dashboard/messages',
+      icon: 'chat',
       labelKey: 'meinchat.nav.messages',
       testId: 'nav-messages',
     });
